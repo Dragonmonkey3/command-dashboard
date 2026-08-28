@@ -1,0 +1,1617 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/industry-7f0eac2d-c54e-4e5f-8bce-8135ea9701d8/styles.css">
+  <script src="_ds/industry-7f0eac2d-c54e-4e5f-8bce-8135ea9701d8/_ds_bundle.js"></script>
+  <script src="./CommandData.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <style>
+    :root{ --cmd-gap:16px; }
+    body{ overscroll-behavior-y:none; }
+    .cmd-chk{ width:18px;height:18px;flex:none;accent-color:var(--color-accent);cursor:pointer; }
+    .cmd-x-btn{ background:none;border:none;cursor:pointer;color:color-mix(in srgb, var(--color-text) 45%, transparent);font-size:16px;line-height:1;padding:2px 4px;transition:color .15s ease;flex:none; }
+    .cmd-x-btn:hover{ color:var(--color-accent-800); }
+    .cmd-txt{ background:transparent;border:none;border-bottom:1px solid transparent;font:inherit;color:inherit;padding:2px 0;width:100%;transition:border-color .15s ease; }
+    .cmd-txt:hover, .cmd-txt:focus{ border-bottom:1px solid var(--color-divider); outline:none; }
+    .cmd-num{ width:64px;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:8px;padding:3px 6px;font:inherit;font-size:13px; }
+    .btn, .input, .cmd-num{ border-radius:10px; }
+    .btn-icon{ border-radius:10px; }
+    .tag{ border-radius:8px; }
+    .seg{ border-radius:10px; overflow:hidden; }
+    .cmd-tab-btn:active{ transform:scale(0.96); }
+    .cmd-sec-head{ display:flex;align-items:center;justify-content:space-between;cursor:pointer; }
+    .cmd-sec-icon{ color:var(--color-accent);font-family:var(--font-heading);font-size:20px; }
+
+    /* — the widget grid: one shared layout for every tab — */
+    .cmd-toolbar{ display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:var(--cmd-gap); }
+    .cmd-swatches{ display:grid;grid-template-columns:1fr 1fr;gap:4px;width:38px; }
+    .cmd-swatch{ width:17px;height:17px;border-radius:5px;border:1px solid color-mix(in srgb, #000 12%, transparent);cursor:pointer;padding:0; }
+    /* — true masonry: JS (layoutTiles) bin-packs each tile into the shortest-fitting
+       column slot and positions it absolutely. CSS Grid's "dense" auto-placement can't
+       do this for variable-height content — it still leaves gaps a shorter neighbor
+       can't backfill. See layoutTiles() in the script for the packing algorithm. */
+    .cmd-grid{ position:relative; }
+    .cmd-tile{ background:var(--color-surface);border:1px solid var(--color-divider);border-radius:14px;box-shadow:var(--shadow-sm);padding:10px 12px;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;position:absolute;margin:0; }
+    .cmd-tile-head{ display:flex;align-items:center;gap:4px;cursor:grab;flex:none; }
+    .cmd-tile-head:active{ cursor:grabbing; }
+    .cmd-tile-title{ flex:1;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:color-mix(in srgb, var(--color-text) 65%, transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0; }
+    .cmd-tile-actions{ display:flex;align-items:center;gap:0;flex:none; }
+    .cmd-size-pop{ position:relative; }
+    .cmd-size-menu{ position:absolute; top:100%; right:0; display:none; gap:4px; background:var(--color-surface); border:1px solid var(--color-divider); border-radius:8px; padding:5px; box-shadow:var(--shadow-md); z-index:60; }
+    .cmd-size-pop:hover .cmd-size-menu{ display:flex; }
+    .cmd-size-menu button{ border:1px solid var(--color-divider); background:var(--color-bg); cursor:pointer; border-radius:4px; display:flex; align-items:center; justify-content:center; padding:0; }
+    .cmd-size-menu button:hover{ border-color:var(--color-accent); }
+    .cmd-tile-body{ flex:1;min-height:0;margin-top:6px;overflow:hidden;cursor:pointer; }
+    .cmd-tile[data-kind="sticky"] .cmd-tile-body, .cmd-tile[data-kind="sticky"] .cmd-tile-head{ cursor:default; }
+    .cmd-tile-empty{ color:color-mix(in srgb, var(--color-text) 45%, transparent);font-size:12px;padding:var(--cmd-gap) 0; }
+
+    /* — modal — */
+    .cmd-modal-backdrop{ position:fixed;inset:0;background:color-mix(in srgb, var(--color-neutral-900) 45%, transparent);display:flex;align-items:center;justify-content:center;padding:var(--cmd-gap);z-index:100; }
+    .cmd-modal{ background:var(--color-bg);border-radius:16px;box-shadow:var(--shadow-lg);width:min(640px,100%);max-height:85vh;display:flex;flex-direction:column;overflow:hidden; }
+    .cmd-modal-head{ display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid var(--color-divider);flex:none; }
+    .cmd-modal-title{ margin:0;font-size:17px; }
+    .cmd-modal-body{ padding:16px;overflow:auto; }
+
+    @media (prefers-reduced-motion: no-preference){
+      .cmd-tile{ transition:box-shadow .18s ease, transform .18s ease, opacity .18s ease; }
+      .cmd-tile:hover, .cmd-card:hover{ box-shadow:var(--shadow-md);transform:translateY(-2px); }
+      .cmd-card{ transition:box-shadow .18s ease, transform .18s ease; }
+      .cmd-tab-btn{ transition:background .15s ease, color .15s ease, transform .1s ease; }
+      .cmd-tab-btn:hover{ transform:translateY(-1px); }
+      .tag{ transition:transform .15s ease, box-shadow .15s ease; }
+      .tag:hover{ transform:translateY(-1px);box-shadow:var(--shadow-sm); }
+      .cmd-heat-cell{ transition:transform .12s ease, box-shadow .12s ease; }
+      .cmd-heat-cell:hover{ transform:scale(1.22);box-shadow:0 0 0 2px var(--color-accent);position:relative;z-index:2; }
+      .cmd-icon-btn{ transition:transform .15s ease, background .15s ease; }
+      .cmd-icon-btn:hover{ transform:rotate(-25deg); }
+      .cmd-progress-fill{ transition:width .5s cubic-bezier(.4,0,.2,1); }
+    }
+
+    /* — shared flat-card look for the non-draggable panels (hero, pinned note, settings) — */
+    .cmd-card{ background:var(--color-surface);border:1px solid var(--color-divider);border-radius:14px;box-shadow:var(--shadow-sm);box-sizing:border-box; }
+
+    /* — hero welcome card — */
+    .cmd-hero{ padding:20px 22px;margin-bottom:var(--cmd-gap);display:flex;flex-direction:column;gap:16px; }
+    .cmd-hero-row1{ display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap; }
+    .cmd-hero-greeting{ font-family:var(--font-heading);font-size:26px;line-height:1.15; }
+    .cmd-hero-streak{ font-size:12px;color:color-mix(in srgb, var(--color-text) 55%, transparent);margin-top:4px;display:flex;align-items:center;gap:5px; }
+    .cmd-hero-progress-label{ display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:color-mix(in srgb, var(--color-text) 60%, transparent);margin-bottom:6px; }
+    .cmd-hero-progress-pct{ font-family:var(--font-heading);font-size:15px;color:var(--color-accent-800); }
+    .cmd-progress-track{ height:12px;background:var(--color-neutral-200);border-radius:6px;overflow:hidden; }
+    .cmd-progress-fill{ height:100%;background:linear-gradient(90deg, var(--color-accent-600), var(--color-accent-800));border-radius:6px; }
+    .cmd-hero-row2{ display:flex;align-items:center;gap:14px;flex-wrap:wrap; }
+
+    /* — icon button (reset, etc) — */
+    .cmd-icon-btn{ background:var(--color-surface);border:1px solid var(--color-divider);cursor:pointer;border-radius:10px;
+      width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:15px;color:var(--color-text);flex:none; }
+    .cmd-icon-btn:hover{ border-color:var(--color-accent);color:var(--color-accent-800); }
+
+    /* — tile grip handle — */
+    .cmd-grip{ display:flex;flex-direction:column;flex-wrap:wrap;gap:2px;width:9px;height:13px;flex:none;opacity:.35;cursor:grab; }
+    .cmd-grip span{ width:3px;height:3px;border-radius:50%;background:currentColor; }
+    .cmd-tile-head:hover .cmd-grip{ opacity:.75; }
+    .cmd-tile-dragging{ opacity:.45 !important;box-shadow:none !important;cursor:grabbing; }
+
+    /* — reminder toasts: the reliable fallback, since OS notification permission is
+       often unavailable on a file:// page — this always works while the tab is open. */
+    .cmd-toast-wrap{ position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:8px;width:min(420px,calc(100vw - 32px)); }
+    .cmd-toast{ display:flex;align-items:center;gap:8px;padding:10px 12px;box-shadow:var(--shadow-lg);font-size:13px; }
+  </style>
+</helmet>
+<div style="{{ rootStyle }}">
+  <div style="position:sticky;top:0;z-index:30;background:var(--color-bg);border-bottom:1px solid var(--color-divider)">
+    <nav class="nav" style="flex-wrap:wrap;row-gap:8px">
+      <span class="nav-brand">Command</span>
+      <div style="position:relative;margin-left:auto">
+        <button class="btn btn-secondary cmd-tab-btn" style="display:flex;align-items:center;gap:8px" onClick="{{ toggleMoreTabs }}">{{ activeTabLabel }} <span style="display:inline-block;transition:transform .2s ease;{{ moreTabsIconStyle }}">▾</span></button>
+        <sc-if value="{{ moreTabsOpen }}" hint-placeholder-val="{{ false }}">
+          <div class="cmd-card" style="position:absolute;right:0;top:calc(100% + 6px);min-width:200px;z-index:40;padding:6px;display:flex;flex-direction:column;gap:2px;box-shadow:var(--shadow-lg)">
+            <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="9">
+              <button class="btn btn-ghost cmd-tab-btn" style="{{ t.menuStyle }}" onClick="{{ t.selectAndClose }}">{{ t.label }}</button>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+    </nav>
+  </div>
+
+  <div style="max-width:1180px;margin:0 auto;padding:var(--space-4) var(--space-4) 60px">
+
+    <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ true }}">
+      <div class="cmd-card cmd-hero">
+        <div class="cmd-hero-row1">
+          <div>
+            <div class="cmd-hero-greeting">Welcome, Alex</div>
+            <div class="cmd-hero-streak">{{ streakDays }}-day login streak</div>
+          </div>
+          <sc-if value="{{ hasFocus }}" hint-placeholder-val="{{ false }}">
+            <button class="tag tag-accent" style="cursor:pointer;border:none;font-size:12px;flex:none" onClick="{{ focusGo }}">{{ focusLabel }}</button>
+          </sc-if>
+        </div>
+        <div>
+          <div class="cmd-hero-progress-label"><span>Today's progress</span><span class="cmd-hero-progress-pct">{{ todayDoneCount }} / {{ todayTotalCount }} · {{ todayProgressPct }}%</span></div>
+          <div class="cmd-progress-track"><div class="cmd-progress-fill" style="{{ todayProgressBarStyle }}"></div></div>
+        </div>
+        <div class="cmd-hero-row2">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;flex:none"><input type="checkbox" class="cmd-chk" style="width:14px;height:14px" checked="{{ hideCompleted }}" onChange="{{ toggleHideCompleted }}" />Hide completed</label>
+        </div>
+      </div>
+    </sc-if>
+
+    <div class="cmd-toolbar">
+      <span class="text-muted" style="font-size:12px">Drag ⋮⋮ to reorder · hover ⤢ to resize · tap a tile to open it</span>
+      <sc-if value="{{ canResetLayout }}" hint-placeholder-val="{{ false }}">
+        <button class="cmd-icon-btn" title="Reset this tab's layout" onClick="{{ resetTabLayout }}">⟲</button>
+      </sc-if>
+      <div class="cmd-swatches" title="Add a sticky note" style="margin-left:auto">
+        <button class="cmd-swatch" style="background:#f4e07a" onClick="{{ addStickyYellow }}"></button>
+        <button class="cmd-swatch" style="background:#a9c9e8" onClick="{{ addStickyBlue }}"></button>
+        <button class="cmd-swatch" style="background:#e3a1a1" onClick="{{ addStickyRed }}"></button>
+        <button class="cmd-swatch" style="background:#a3d9a5" onClick="{{ addStickyGreen }}"></button>
+      </div>
+      <div style="position:relative">
+        <button class="btn btn-secondary" onClick="{{ toggleAddBlockMenu }}">+ Block</button>
+        <sc-if value="{{ addBlockMenuOpen }}" hint-placeholder-val="{{ false }}">
+          <div class="cmd-card" style="position:absolute;left:0;top:calc(100% + 6px);min-width:190px;z-index:40;padding:6px;display:flex;flex-direction:column;gap:2px;box-shadow:var(--shadow-lg)">
+            <sc-for list="{{ blockTypeOptions }}" as="o" hint-placeholder-count="6">
+              <button class="btn btn-ghost" style="justify-content:flex-start" onClick="{{ o.select }}">{{ o.label }}</button>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+      <sc-if value="{{ isProjects }}" hint-placeholder-val="{{ false }}">
+        <input class="input" style="width:auto;font-size:12px" id="folderNameDraft" placeholder="New folder name" />
+        <button class="btn btn-secondary" onClick="{{ addFolderTile }}">+ Folder</button>
+      </sc-if>
+    </div>
+
+    <sc-if value="{{ hasTiles }}" hint-placeholder-val="{{ false }}">
+      <div class="cmd-grid">
+        <sc-for list="{{ gridTiles }}" as="tile" hint-placeholder-count="6">
+          <div class="cmd-tile" data-kind="{{ tile.kind }}" data-tile-key="{{ tile.key }}" data-colspan="{{ tile.colSpan }}" style="{{ tile.style }}">
+            <div class="cmd-tile-head" onPointerDown="{{ tile.onDown }}" onPointerMove="{{ tile.onMove }}" onPointerUp="{{ tile.onUp }}">
+              <span class="cmd-grip" title="Drag to reorder"><span></span><span></span><span></span><span></span><span></span><span></span></span>
+              <span class="cmd-tile-title">{{ tile.title }}</span>
+              <div class="cmd-tile-actions">
+                <div class="cmd-size-pop"><button class="cmd-x-btn" onPointerDown="{{ stopProp }}" title="Resize">⤢</button><div class="cmd-size-menu">
+                  <button style="width:18px;height:18px" onPointerDown="{{ stopProp }}" onClick="{{ tile.setSizeS }}" title="Small"><span style="width:9px;height:9px;background:currentColor;display:block"></span></button>
+                  <button style="width:26px;height:18px" onPointerDown="{{ stopProp }}" onClick="{{ tile.setSizeWide }}" title="Wide"><span style="width:18px;height:8px;background:currentColor;display:block"></span></button>
+                  <button style="width:22px;height:22px" onPointerDown="{{ stopProp }}" onClick="{{ tile.setSizeLarge }}" title="Large"><span style="width:14px;height:14px;background:currentColor;display:block"></span></button>
+                  <button style="width:30px;height:18px" onPointerDown="{{ stopProp }}" onClick="{{ tile.setSizeFull }}" title="Full width"><span style="width:22px;height:10px;background:currentColor;display:block"></span></button>
+                </div></div>
+                <button class="cmd-x-btn" onPointerDown="{{ stopProp }}" onClick="{{ tile.remove }}" title="{{ tile.removeTitle }}">×</button>
+              </div>
+            </div>
+            <div class="cmd-tile-body" onClick="{{ tile.bodyClick }}">{{ tile.condensed }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+    <sc-if value="{{ noTiles }}" hint-placeholder-val="{{ false }}">
+      <p class="cmd-tile-empty">Nothing here yet — add a sticky note or a block above to get started.</p>
+    </sc-if>
+
+    <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:var(--cmd-gap);max-width:460px">
+        <div class="cmd-card" style="padding:var(--space-4)">
+          <h4 style="margin:0">Appearance</h4>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer"><input type="checkbox" class="cmd-chk" checked="{{ darkMode }}" onChange="{{ toggleDarkMode }}" />Dark mode</label>
+        </div>
+        <div class="cmd-card" style="padding:var(--space-4)">
+          <h4 style="margin:0">Data</h4>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+            <button class="btn btn-secondary" onClick="{{ exportData }}">Export data (JSON)</button>
+            <label class="btn btn-secondary" style="cursor:pointer">Import data<input type="file" accept="application/json" style="display:none" onChange="{{ importData }}" /></label>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+            <button class="btn btn-secondary" onClick="{{ resetAllData }}">Reset to sample data</button>
+            <button class="btn btn-secondary" onClick="{{ deleteSampleData }}">Delete all data (start blank)</button>
+          </div>
+          <p class="text-muted" style="font-size:12px;margin-top:8px">Data is stored locally in this browser only — it doesn't sync across devices or accounts.</p>
+        </div>
+        <div class="cmd-card" style="padding:var(--space-4)">
+          <h4 style="margin:0">Tabs</h4>
+          <p class="text-muted" style="font-size:12px;margin-top:4px">Show or hide built-in tabs, or add your own.</p>
+          <sc-for list="{{ builtinTabsVM }}" as="bt" hint-placeholder-count="9">
+            <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+              <input type="checkbox" class="cmd-chk" style="width:14px;height:14px" checked="{{ bt.visible }}" onChange="{{ bt.toggle }}" />
+              <input class="cmd-txt" style="font-size:13px" value="{{ bt.label }}" onChange="{{ bt.rename }}" />
+            </div>
+          </sc-for>
+          <div class="hr" style="margin:10px 0;border-top:1px solid var(--color-divider)"></div>
+          <sc-for list="{{ customTabsVM }}" as="t" hint-placeholder-count="1">
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--color-divider)">
+              <input class="cmd-txt" value="{{ t.label }}" onChange="{{ t.rename }}" />
+              <button class="cmd-x-btn" style="margin-left:auto" onClick="{{ t.remove }}">×</button>
+            </div>
+          </sc-for>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <input class="input" id="newTabNameDraft" placeholder="New tab name" />
+            <button class="btn btn-secondary" onClick="{{ addCustomTab }}">Add tab</button>
+          </div>
+        </div>
+        <sc-if value="{{ hasHiddenTiles }}" hint-placeholder-val="{{ false }}">
+          <div class="cmd-card" style="padding:var(--space-4)">
+            <h4 style="margin:0">Hidden tiles</h4>
+            <p class="text-muted" style="font-size:12px;margin-top:4px">Tiles you × 'd off a dashboard/tab — restore any of them here.</p>
+            <sc-for list="{{ hiddenTilesVM }}" as="h" hint-placeholder-count="1">
+              <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--color-divider);font-size:13px">
+                <span class="text-muted" style="font-size:11px">{{ h.tabLabel }}</span><span>{{ h.title }}</span>
+                <button class="btn btn-ghost" style="margin-left:auto;font-size:11px" onClick="{{ h.restore }}">Restore</button>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ hasToasts }}" hint-placeholder-val="{{ false }}">
+      <div class="cmd-toast-wrap">
+        <sc-for list="{{ dueToasts }}" as="toast" hint-placeholder-count="1">
+          <div class="cmd-card cmd-toast">
+            <span class="tag tag-accent" style="flex:none">Reminder</span>
+            <span>{{ toast.text }}</span>
+            <button class="cmd-x-btn" onClick="{{ toast.dismiss }}">×</button>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ modalTile }}" hint-placeholder-val="{{ false }}">
+      <div class="cmd-modal-backdrop" onClick="{{ closeModal }}">
+        <div class="cmd-modal" onClick="{{ stopProp }}">
+          <div class="cmd-modal-head">
+            <h4 class="cmd-modal-title">{{ modalTile.title }}</h4>
+            <button class="cmd-x-btn" onClick="{{ closeModal }}">×</button>
+          </div>
+          <div class="cmd-modal-body">{{ modalTile.full }}</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <div class="cmd-card" style="padding:var(--space-3);margin-top:var(--cmd-gap)">
+      <div class="cmd-sec-head" onClick="{{ togglePinned }}"><h6 style="margin:0">Pinned note — {{ activeTabLabel }}</h6><span style="color:var(--color-accent)">{{ pinnedIcon }}</span></div>
+      <sc-if value="{{ pinnedOpen }}" hint-placeholder-val="{{ false }}"><textarea class="input" style="margin-top:8px;min-height:70px" value="{{ pinnedText }}" onChange="{{ setPinnedText }}"></textarea></sc-if>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;pomodoroWorkMinutes&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:25,&quot;tsType&quot;:&quot;number&quot;,&quot;min&quot;:5,&quot;max&quot;:60,&quot;step&quot;:5,&quot;section&quot;:&quot;Pomodoro&quot;},&quot;pomodoroBreakMinutes&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:6,&quot;tsType&quot;:&quot;number&quot;,&quot;min&quot;:1,&quot;max&quot;:30,&quot;step&quot;:1,&quot;section&quot;:&quot;Pomodoro&quot;}}">
+const U = window.CommandUtils;
+const E = React.createElement;
+const REDUCE_MOTION = typeof window!=='undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const HEAT_COLORS = { red:'#c96a4f', yellow:'#d1a343', green:'#6a9b6e', empty:'var(--color-neutral-200)' };
+const PALETTE = ['var(--color-accent-800)','var(--color-accent-600)','var(--color-accent-400)','var(--color-neutral-700)','var(--color-accent-900)','var(--color-neutral-500)','var(--color-accent-300)','var(--color-neutral-400)'];
+const HABIT_COLORS = ['var(--color-accent-900)','var(--color-accent-600)','var(--color-accent-400)','var(--color-neutral-700)','var(--color-accent-800)','var(--color-neutral-500)'];
+const HABIT_DASH = ['0','6 4','2 3','0','6 4','2 3'];
+const BIBLE_COLORS = ['var(--color-accent-800)','var(--color-accent-500)','var(--color-accent-300)','var(--color-neutral-500)'];
+// A tile's assigned size controls how much detail its chart content renders — this is
+// what makes "large" actually mean something instead of just extra empty padding.
+const SIZE_CHART_H = { s:70, wide:90, large:160, full:170 };
+// Width comes from the column span; height is never forced — it's driven by content,
+// with just a floor per size so a sparse "large" tile doesn't collapse to sliver-small.
+const TILE_DIMS = { s:{w:1,minH:88}, wide:{w:2,minH:88}, large:{w:2,minH:170}, full:{w:4,minH:110} };
+
+function curriculumTiles(prefix,label){
+  return [
+    {key:prefix+'Curricula', title:label+' curricula', size:'full'},
+    {key:prefix+'Resources', title:label+' resources', size:'wide'},
+    {key:prefix+'Blocks', title:label+' content blocks', size:'wide'},
+    {key:prefix+'Notion', title:label+' Notion links', size:'wide'}
+  ];
+}
+const TAB_BUILTIN_TILES = {
+  dashboard: [
+    {key:'dTodo', title:'Daily to-do', size:'wide'},
+    {key:'dWeekdayChunks', title:'Weekday schedule', size:'full'},
+    {key:'dWeekly', title:'Weekly recurring (alt)', size:'wide'},
+    {key:'dChunks', title:'Daily chunks', size:'large'},
+    {key:'dCounters', title:'Counters', size:'wide'},
+    {key:'dHabits', title:'Habit counters', size:'wide'},
+    {key:'dHabitGraph', title:'Habit graph', size:'large'},
+    {key:'dHeatmap', title:'Consistency heatmap', size:'s'}
+  ],
+  finances: [
+    {key:'fBar', title:'Income vs. spending', size:'wide'},
+    {key:'fPie', title:'Spending by category', size:'large'},
+    {key:'fIncome', title:'Income streams', size:'wide'}
+  ],
+  daily: [
+    {key:'dayDevotion', title:'Devotion', size:'large'},
+    {key:'dayBible', title:'Bible progress', size:'wide'},
+    {key:'dayJournal', title:'Journal', size:'wide'},
+    {key:'dayBooks', title:'Book list', size:'wide'}
+  ],
+  body: [
+    {key:'bTrackers', title:'Trackers', size:'wide'},
+    {key:'bGym', title:'Gym consistency', size:'s'},
+    {key:'bProgram', title:'Weekday workout program', size:'large'},
+    {key:'bPr', title:'PR log', size:'wide'}
+  ],
+  stem: curriculumTiles('s','STEM'), bible: curriculumTiles('bi','Bible'), civ: curriculumTiles('c','Civ'),
+  projects: [],
+  resources: [
+    {key:'rPomodoro', title:'Pomodoro', size:'wide'},
+    {key:'rReminders', title:'Reminders', size:'wide'},
+    {key:'rScratch', title:'Scratch pad', size:'wide'},
+    {key:'rPicker', title:'Random picker', size:'wide'}
+  ]
+};
+const TILE_TITLES = {};
+Object.keys(TAB_BUILTIN_TILES).forEach(tk=>TAB_BUILTIN_TILES[tk].forEach(d=>{ TILE_TITLES[d.key]=d.title; }));
+const BUILTIN_TAB_LABELS = {dashboard:'Dashboard',daily:'Daily',finances:'Finances',body:'Body',civ:'Civ Studies',stem:'STEM',bible:'Bible',projects:'Projects',resources:'Resources'};
+const CURRICULUM_TAB_PREFIX = { stem:'s', bible:'bi', civ:'c' };
+
+class Component extends DCLogic {
+  // Fills in any field a fresh sampleData()/blankData() or an older/imported save might be
+  // missing — including the unified widget-grid migration (one ordered tile list per tab,
+  // replacing the old pixel-packed dashboard/finance canvases, the separate freeform
+  // sticky-note layer, and the static non-interactive layout every other tab used to have).
+  // Called from the constructor AND from reset/delete/import, so every path that can hand
+  // the app a fresh `data` object goes through the same normalization.
+  normalizeData(data){
+    if(!data.tabContent) data.tabContent = { stem:{resources:[],blocks:[],notionLinks:[]}, bible:{resources:[],blocks:[],notionLinks:[]}, civ:{resources:[],blocks:[],notionLinks:[]} };
+    if(!data.tabContent.dashboard) data.tabContent.dashboard = { blocks: [] };
+    if(!data.counters) data.counters = [{id:'water', name:'Water', unit:'glasses', goal:data.waterGoal||8, decimals:false}];
+    if(!data.weekdayChunks) data.weekdayChunks = {Sun:[],Mon:[],Tue:[],Wed:[],Thu:[],Fri:[],Sat:[]};
+    Object.keys(data.days||{}).forEach(k=>{ const day=data.days[k]; if(!day.counterValues) day.counterValues={}; if(day.water!==undefined && day.counterValues.water===undefined) day.counterValues.water=day.water; if(!day.wdChunkDone) day.wdChunkDone={}; if(day.devotion && !day.devotion.chapters) day.devotion.chapters={ot:0,nt:0,psalms:0,proverbs:0}; });
+    (data.projects||[]).forEach(f=>{ (f.children||[]).forEach(e=>{ if(e.deactivated===undefined) e.deactivated=false; }); });
+    (data.adHoc||[]).forEach(a=>{ if(a.deadline===undefined) a.deadline=''; });
+    (data.weeklyTasks||[]).forEach(t=>{ if(t.notes===undefined) t.notes=''; });
+    if(!data.finances.barPeriod) data.finances.barPeriod='month';
+    if(!data.settings) data.settings={darkMode:false};
+    if(data.scratchPad===undefined) data.scratchPad='';
+    if(!data.customTabs) data.customTabs=[];
+    if(!data.reminders) data.reminders=[];
+    if(!data.hiddenTabs) data.hiddenTabs=[];
+    if(!data.tabLabelOverrides) data.tabLabelOverrides={};
+
+    if(!data.tiles || data.gridLayoutV!==1){
+      data.tiles = {};
+      const mkList = (defs)=> defs.map(d=>({id:d.key, kind:'builtin', size:d.size, hidden:false}));
+      Object.keys(TAB_BUILTIN_TILES).forEach(tk=>{ data.tiles[tk] = mkList(TAB_BUILTIN_TILES[tk]); });
+      data.tiles.projects = (data.projects||[]).map(f=>({id:f.id, kind:'folder', size:'wide', hidden:false}));
+      (data.customTabs||[]).forEach(t=>{ if(!data.tiles[t.id]) data.tiles[t.id]=[]; });
+      Object.keys(data.stickyNotes||{}).forEach(tab=>{
+        if(!data.tiles[tab]) data.tiles[tab]=[];
+        (data.stickyNotes[tab]||[]).forEach(n=>{ data.tiles[tab].push({id:n.id||U.uid(), kind:'sticky', size:'s', hidden:false, color:n.color, text:n.text||''}); });
+      });
+      Object.keys(data.customBlocksByTab||{}).forEach(tab=>{
+        if(!data.tiles[tab]) data.tiles[tab]=[];
+        (data.customBlocksByTab[tab]||[]).forEach(b=>{
+          if(b.type==='json') data.tiles[tab].push({id:b.id||U.uid(), kind:'json', size:'wide', hidden:false, json:b.json||''});
+          else data.tiles[tab].push({id:b.id||U.uid(), kind:'mirror', mirrorType:b.type, size:'wide', hidden:false});
+        });
+      });
+      data.gridLayoutV = 1;
+    }
+    // Pick up any builtin tile added to TAB_BUILTIN_TILES after this save was first created
+    // (e.g. a new tile shipped in an update) — append it rather than silently dropping it.
+    Object.keys(TAB_BUILTIN_TILES).forEach(tk=>{
+      const list = data.tiles[tk]||(data.tiles[tk]=[]);
+      const known = new Set(list.map(t=>t.id));
+      TAB_BUILTIN_TILES[tk].forEach(d=>{ if(!known.has(d.key)) list.push({id:d.key, kind:'builtin', size:d.size, hidden:false}); });
+    });
+    (data.customTabs||[]).forEach(t=>{ if(!data.tiles[t.id]) data.tiles[t.id]=[]; });
+    return data;
+  }
+
+  constructor(props){
+    super(props);
+    let data;
+    try { const raw = localStorage.getItem('command-app-data-v1'); data = raw ? JSON.parse(raw) : U.sampleData(); }
+    catch(e){ data = U.sampleData(); }
+    data = this.normalizeData(data);
+
+    this.state = {
+      data, activeTab:'dashboard', viewDate: U.todayKey(),
+      uiById:{}, importErrors:{}, habitDetailOpen:false, hideCompleted:false, moreTabsOpen:false,
+      modalTab:null, modalId:null, dragPreviewOrder:null, addBlockMenuOpen:false, dueToasts:[],
+      pomodoro: {mode:'work', secondsLeft:(props.pomodoroWorkMinutes??25)*60, running:false, cycles:0}
+    };
+  }
+
+  componentDidMount(){
+    const today = U.todayKey();
+    this.update(data=>{
+      const last = data.lastActiveDate;
+      if(last !== today){
+        if(last === U.addDays(today,-1)) data.streak = (data.streak||0)+1;
+        else if(!last) data.streak = data.streak||1;
+        else data.streak = 1;
+        data.lastActiveDate = today;
+      }
+    });
+    // Reminders only fire while this tab is open — no service worker / push here,
+    // this is a static local page. Checking every 20s is plenty for a personal reminder list.
+    this._reminderTimer = setInterval(()=>this.checkDueReminders(), 20000);
+    this.checkDueReminders();
+    this._resizeHandler = ()=>this.layoutTiles();
+    window.addEventListener('resize', this._resizeHandler);
+    this.layoutTiles();
+  }
+  componentWillUnmount(){ if(this._pomTimer) clearInterval(this._pomTimer); if(this._reminderTimer) clearInterval(this._reminderTimer); if(this._resizeHandler) window.removeEventListener('resize', this._resizeHandler); }
+  checkDueReminders(){
+    const now = Date.now();
+    const due = (this.state.data.reminders||[]).filter(r=>!r.notified && new Date(r.at).getTime()<=now);
+    if(!due.length) return;
+    this.update(data=>{ due.forEach(r=>{ const t=data.reminders.find(x=>x.id===r.id); if(t) t.notified=true; }); });
+    // Show an in-app toast regardless of OS notification support (file:// pages often
+    // can't get notification permission at all) — this is the part that's guaranteed to work.
+    this.setState(s=>({dueToasts:[...(s.dueToasts||[]), ...due.map(r=>({id:r.id,text:r.text}))]}));
+    due.forEach(r=>{
+      if(typeof Notification!=='undefined' && Notification.permission==='granted') new Notification('Command reminder', {body:r.text});
+    });
+  }
+  dismissToast(id){ this.setState(s=>({dueToasts:(s.dueToasts||[]).filter(t=>t.id!==id)})); }
+
+  // — true masonry: bin-pack every tile into the shortest-fitting column slot and
+  //   position it absolutely — CSS Grid's "dense" auto-placement can't do this for
+  //   variable-height content, it still leaves gaps a shorter neighbor can't backfill.
+  //   Runs after every render (drag, resize, add/remove, or content just changing height),
+  //   and FLIP-animates from wherever each tile was last so it always reads as a smooth
+  //   reflow instead of a jump.
+  layoutTiles(){
+    const grid = document.querySelector('.cmd-grid');
+    if(!grid){ this._lastRects=null; return; }
+    const tiles = [...grid.querySelectorAll(':scope > .cmd-tile[data-tile-key]')];
+    if(!tiles.length){ grid.style.height='0px'; this._lastRects=null; return; }
+    const before = this._lastRects;
+    const gap = 16;
+    const containerW = grid.clientWidth || (grid.parentElement && grid.parentElement.clientWidth) || 960;
+    let cols = 4; if(containerW<=480) cols=1; else if(containerW<=860) cols=2;
+    const colW = (containerW-gap*(cols-1))/cols;
+    const colHeights = new Array(cols).fill(0);
+    const targets = {};
+    tiles.forEach(el=>{
+      const key = el.dataset.tileKey;
+      const wSpan = Math.min(parseInt(el.dataset.colspan||'1',10)||1, cols);
+      let bestStart=0, bestVal=Infinity;
+      for(let c=0;c<=cols-wSpan;c++){ const v=Math.max(...colHeights.slice(c,c+wSpan)); if(v<bestVal){ bestVal=v; bestStart=c; } }
+      const top=bestVal, left=bestStart*(colW+gap), width=wSpan*colW+(wSpan-1)*gap;
+      el.style.width = width+'px';
+      const height = el.getBoundingClientRect().height;
+      targets[key] = {top,left,width};
+      for(let c=bestStart;c<bestStart+wSpan;c++) colHeights[c]=top+height+gap;
+    });
+    grid.style.height = Math.max(0,(colHeights.length?Math.max(...colHeights):0)-gap)+'px';
+    const gridRect = grid.getBoundingClientRect();
+    const after = {};
+    tiles.forEach(el=>{
+      const key = el.dataset.tileKey; const t = targets[key];
+      const newAbsLeft = gridRect.left+t.left, newAbsTop = gridRect.top+t.top;
+      const b = before && before[key];
+      if(b && (Math.abs(b.left-newAbsLeft)>1 || Math.abs(b.top-newAbsTop)>1)){
+        const dx=b.left-newAbsLeft, dy=b.top-newAbsTop;
+        el.style.transition='none';
+        el.style.left=t.left+'px'; el.style.top=t.top+'px';
+        el.style.transform='translate('+dx+'px,'+dy+'px)';
+        void el.offsetWidth;
+        el.style.transition='transform .18s cubic-bezier(.2,.9,.3,1)';
+        el.style.transform='';
+      } else {
+        el.style.left=t.left+'px'; el.style.top=t.top+'px';
+      }
+      after[key] = {left:newAbsLeft, top:newAbsTop};
+    });
+    this._lastRects = after;
+  }
+  componentDidUpdate(){ this.layoutTiles(); }
+
+  persist(data){ try{ localStorage.setItem('command-app-data-v1', JSON.stringify(data)); }catch(e){} }
+  update(mutator){ this.setState(s=>{ const data = JSON.parse(JSON.stringify(s.data)); mutator(data); this.persist(data); return {data}; }); }
+
+  getUi(id,key,def){ const u=this.state.uiById[id]; return u && u[key]!==undefined ? u[key] : (def!==undefined?def:false); }
+  toggleUi(id,key,def){ this.setState(s=>{ const cur=s.uiById[id]||{}; const curVal = cur[key]!==undefined?cur[key]:(def!==undefined?def:false); return {uiById:{...s.uiById,[id]:{...cur,[key]:!curVal}}}; }); }
+  setUi(id,key,val){ this.setState(s=>{ const cur=s.uiById[id]||{}; return {uiById:{...s.uiById,[id]:{...cur,[key]:val}}}; }); }
+
+  setTab(tab){ this.setState({activeTab:tab, modalTab:null, modalId:null, addBlockMenuOpen:false}); }
+  setViewDate(k){ this.setState({viewDate:k}); }
+  shiftViewDate(n){ this.setState(s=>({viewDate:U.addDays(s.viewDate,n)})); }
+
+  ensureDay(data,key){
+    const def = ()=>({dailyDone:{},weeklyDone:{},chunkDone:{},wdChunkDone:{},water:0,counterValues:{},calories:'',protein:'',weight:'',gym:false,devotion:{memoryVerse:'',chapters:{ot:0,nt:0,psalms:0,proverbs:0},prayer5:false,prayerOfDay:'',newIdea:'',prayerRequests:[],thankful:[]}});
+    if(!data.days[key]) data.days[key]=def();
+    if(!data.days[key].devotion) data.days[key].devotion=def().devotion;
+    if(!data.days[key].counterValues) data.days[key].counterValues={};
+    if(!data.days[key].wdChunkDone) data.days[key].wdChunkDone={};
+    return data.days[key];
+  }
+  ensureDayReadonly(data,key){ return data.days[key] || {dailyDone:{},weeklyDone:{},chunkDone:{},wdChunkDone:{},water:0,counterValues:{},calories:'',protein:'',weight:'',gym:false,devotion:{memoryVerse:'',chapters:{ot:0,nt:0,psalms:0,proverbs:0},prayer5:false,prayerOfDay:'',newIdea:'',prayerRequests:[],thankful:[]}}; }
+
+  addListItem(path,item){ this.update(data=>{ let n=data; for(let i=0;i<path.length-1;i++) n=n[path[i]]; n[path[path.length-1]].push(item); }); }
+  removeListItem(path,id){ this.update(data=>{ let n=data; for(let i=0;i<path.length-1;i++) n=n[path[i]]; n[path[path.length-1]]=n[path[path.length-1]].filter(x=>x.id!==id); }); }
+  renameListItem(path,id,field,value){ this.update(data=>{ let n=data; for(let i=0;i<path.length-1;i++) n=n[path[i]]; const it=n[path[path.length-1]].find(x=>x.id===id); if(it) it[field]=value; }); }
+
+  toggleDailyDone(id){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.dailyDone[id]=!day.dailyDone[id]; }); }
+  toggleAdHoc(id){ this.update(data=>{ const it=data.adHoc.find(x=>x.id===id); if(it) it.done=!it.done; }); }
+  toggleWeeklyDay(id,day){ this.update(data=>{ const t=data.weeklyTasks.find(x=>x.id===id); if(t){ const i=t.days.indexOf(day); if(i>=0) t.days.splice(i,1); else t.days.push(day); } }); }
+  toggleWeeklyDone(id){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.weeklyDone[id]=!day.weeklyDone[id]; }); }
+  toggleChunkDone(id){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.chunkDone[id]=!day.chunkDone[id]; }); }
+  toggleWdChunkDone(id){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.wdChunkDone[id]=!day.wdChunkDone[id]; }); }
+  setHabitValue(id,value){ this.update(data=>{ const h=data.habits.find(x=>x.id===id); if(h) h.history[this.state.viewDate]=Number(value)||0; }); }
+  logHabitDelta(id,delta){ this.update(data=>{ const h=data.habits.find(x=>x.id===id); if(!h) return; const cur=h.history[this.state.viewDate]||0; h.history[this.state.viewDate]=Math.max(0,Math.round((cur+delta)*10)/10); }); }
+
+  getCounterVal(data,day,c){ const v = day.counterValues ? day.counterValues[c.id] : undefined; if(v!==undefined) return v; if(c.id==='water' && day.water!==undefined) return day.water; return 0; }
+  setCounterVal(id,val,decimals){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); let nv=Number(val); if(isNaN(nv)) nv=0; if(nv<0)nv=0; day.counterValues[id]= decimals ? Math.round(nv*10)/10 : Math.round(nv); }); }
+  incCounter(id,delta,decimals){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); const cur = day.counterValues[id]!==undefined?day.counterValues[id]:(id==='water'&&day.water!==undefined?day.water:0); let nv=cur+delta; if(nv<0)nv=0; day.counterValues[id]= decimals ? Math.round(nv*10)/10 : Math.round(nv); }); }
+  addCounter(name,unit,goal){ if(!name||!name.trim())return; this.update(data=>{ data.counters.push({id:U.uid(),name:name.trim(),unit:unit||'',goal:Number(goal)||1,decimals:false}); }); }
+  removeCounter(id){ this.update(data=>{ data.counters=data.counters.filter(c=>c.id!==id); }); }
+  setCounterField(id,field,val){ this.update(data=>{ const c=data.counters.find(x=>x.id===id); if(c) c[field]=val; }); }
+  toggleCounterDecimals(id){ this.update(data=>{ const c=data.counters.find(x=>x.id===id); if(c) c.decimals=!c.decimals; }); }
+
+  setDevotionField(field,value){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.devotion[field]=value; }); }
+  togglePrayer5(){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.devotion.prayer5=!day.devotion.prayer5; }); }
+  addDevotionListItem(field,value){ if(!value||!value.trim())return; this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); if(!Array.isArray(day.devotion[field])) day.devotion[field]=[]; day.devotion[field].push(value); }); }
+  removeDevotionListItem(field,idx){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.devotion[field].splice(idx,1); }); }
+  setChapterCount(cat,value){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); if(!day.devotion.chapters) day.devotion.chapters={ot:0,nt:0,psalms:0,proverbs:0}; let n=Number(value); if(isNaN(n)||n<0) n=0; day.devotion.chapters[cat]=n; }); }
+  resetBibleProgress(){ if(!window.confirm('Reset all Bible chapter progress? This clears logged chapters on every day.')) return; this.update(data=>{ Object.keys(data.days).forEach(k=>{ if(data.days[k].devotion) data.days[k].devotion.chapters={ot:0,nt:0,psalms:0,proverbs:0}; }); }); }
+  addJournalEntry(text){ if(!text||!text.trim())return; const now=new Date(); let key=U.todayKey(); if(now.getHours()<6) key=U.addDays(key,-1); this.update(data=>data.journal.unshift({id:U.uid(),dateKey:key,text})); }
+  addReminder(text,at){ if(!text||!text.trim()||!at)return; this.update(data=>{ data.reminders.push({id:U.uid(),text:text.trim(),at,notified:false}); data.reminders.sort((a,b)=>a.at.localeCompare(b.at)); }); }
+  removeReminder(id){ this.update(data=>{ data.reminders=data.reminders.filter(r=>r.id!==id); }); }
+  requestNotifyPermission(){ if(typeof Notification!=='undefined') Notification.requestPermission().then(()=>this.forceUpdate()); }
+  setPinnedText(tab,text){ this.update(data=>{ data.pinnedNotes[tab]=text; }); }
+
+  // — widget grid: order + size live in data.tiles[tabKey], a flat ordered list.
+  //   CSS Grid (grid-auto-flow: dense) does all the packing — we only ever touch order/size.
+  setTileSize(tabKey,id,size){ this.update(data=>{ const t=(data.tiles[tabKey]||[]).find(x=>x.id===id); if(t) t.size=size; }); }
+  resetTabLayout(tabKey){
+    const defs = TAB_BUILTIN_TILES[tabKey]; if(!defs) return;
+    this.update(data=>{
+      const builtinList = defs.map(d=>({id:d.key, kind:'builtin', size:d.size, hidden:false}));
+      const rest = (data.tiles[tabKey]||[]).filter(t=>t.kind!=='builtin');
+      data.tiles[tabKey] = builtinList.concat(rest);
+    });
+  }
+  removeOrHideTile(tabKey,id,deletable){
+    this.update(data=>{
+      const list=data.tiles[tabKey]||[]; const idx=list.findIndex(x=>x.id===id); if(idx<0) return;
+      if(deletable) list.splice(idx,1); else list[idx].hidden=true;
+    });
+    if(this.state.modalTab===tabKey && this.state.modalId===id) this.closeModal();
+  }
+  restoreTile(tabKey,id){ this.update(data=>{ const t=(data.tiles[tabKey]||[]).find(x=>x.id===id); if(t) t.hidden=false; }); }
+  openModal(tabKey,id){ this.setState({modalTab:tabKey, modalId:id}); }
+  closeModal(){ this.setState({modalTab:null, modalId:null}); }
+
+  // — live drag-to-reorder: reordering during the drag only touches transient state
+  //   (fast, no localStorage writes on every pointer move); the real data.tiles order
+  //   is committed once, on drop. componentDidUpdate() FLIP-animates the shuffle.
+  buildDragHandlers(tabKey,id){
+    return {
+      onDown:(e)=>{
+        e.currentTarget.setPointerCapture(e.pointerId);
+        this._dragId=id; this._dragTab=tabKey;
+        const tile=e.currentTarget.closest('.cmd-tile'); if(tile) tile.classList.add('cmd-tile-dragging');
+        this.setState({dragPreviewOrder:(this.state.data.tiles[tabKey]||[]).filter(t=>!t.hidden).map(t=>t.id)});
+      },
+      onMove:(e)=>{
+        if(!this._dragId || this._dragTab!==tabKey) return;
+        const now = (window.performance||Date).now();
+        if(this._lastReorderAt && now-this._lastReorderAt < 100) return;
+        const under = document.elementFromPoint(e.clientX,e.clientY);
+        const targetEl = under && under.closest('.cmd-tile');
+        const targetId = targetEl && targetEl.getAttribute('data-tile-key');
+        if(!targetId || targetId===this._dragId) return;
+        // require the pointer to be reasonably centered on the target, not just past its
+        // edge — otherwise two adjacent tiles flicker back and forth near the boundary
+        const r = targetEl.getBoundingClientRect();
+        const dx = Math.abs(e.clientX-(r.left+r.width/2))/(r.width/2);
+        const dy = Math.abs(e.clientY-(r.top+r.height/2))/(r.height/2);
+        if(Math.max(dx,dy) > 0.6) return;
+        this.setState(s=>{
+          const order=(s.dragPreviewOrder||[]).slice();
+          const fi=order.indexOf(this._dragId), ti=order.indexOf(targetId);
+          if(fi<0 || ti<0 || fi===ti) return null;
+          this._lastReorderAt = now;
+          order.splice(fi,1); order.splice(ti,0,this._dragId);
+          return {dragPreviewOrder:order};
+        });
+      },
+      onUp:(e)=>{
+        const tile=e.currentTarget.closest('.cmd-tile'); if(tile) tile.classList.remove('cmd-tile-dragging');
+        this._dragId=null; this._dragTab=null;
+        const finalOrder = this.state.dragPreviewOrder;
+        if(finalOrder){
+          this.update(data=>{
+            const list = data.tiles[tabKey]||[]; const byId={}; list.forEach(t=>byId[t.id]=t);
+            const hiddenOnes = list.filter(t=>t.hidden);
+            data.tiles[tabKey] = finalOrder.map(tid=>byId[tid]).filter(Boolean).concat(hiddenOnes);
+          });
+        }
+        this.setState({dragPreviewOrder:null});
+      }
+    };
+  }
+
+  addStickyTile(tabKey,color){ this.update(data=>{ if(!data.tiles[tabKey]) data.tiles[tabKey]=[]; data.tiles[tabKey].push({id:U.uid(), kind:'sticky', size:'s', hidden:false, color, text:''}); }); }
+  setStickyText(tabKey,id,text){ this.update(data=>{ const t=(data.tiles[tabKey]||[]).find(x=>x.id===id); if(t) t.text=text; }); }
+  addChartTile(tabKey){ this.update(data=>{ if(!data.tiles[tabKey]) data.tiles[tabKey]=[]; data.tiles[tabKey].push({id:U.uid(), kind:'chart', size:'wide', hidden:false, chartType:'bar', name:'New chart', points:[{label:'A',value:3},{label:'B',value:5},{label:'C',value:2}]}); }); }
+  addJsonTile(tabKey){ this.update(data=>{ if(!data.tiles[tabKey]) data.tiles[tabKey]=[]; data.tiles[tabKey].push({id:U.uid(), kind:'json', size:'wide', hidden:false, json:''}); }); }
+  addMirrorTile(tabKey,mirrorType){ this.update(data=>{ if(!data.tiles[tabKey]) data.tiles[tabKey]=[]; data.tiles[tabKey].push({id:U.uid(), kind:'mirror', mirrorType, size:'wide', hidden:false}); }); }
+  setChartField(tabKey,id,field,val){ this.update(data=>{ const t=(data.tiles[tabKey]||[]).find(x=>x.id===id); if(t) t[field]=val; }); }
+  setChartPoint(tabKey,id,i,field,val){ this.update(data=>{ const t=(data.tiles[tabKey]||[]).find(x=>x.id===id); if(t) t.points[i][field]=val; }); }
+  addChartPoint(tabKey,id){ this.update(data=>{ const t=(data.tiles[tabKey]||[]).find(x=>x.id===id); if(t) t.points.push({label:'',value:0}); }); }
+  removeChartPoint(tabKey,id,i){ this.update(data=>{ const t=(data.tiles[tabKey]||[]).find(x=>x.id===id); if(t) t.points.splice(i,1); }); }
+  setJsonField(tabKey,id,val){ this.update(data=>{ const t=(data.tiles[tabKey]||[]).find(x=>x.id===id); if(t) t.json=val; }); }
+
+  addFolder(name){ if(!name||!name.trim())return; this.update(data=>{ const f={id:U.uid(),type:'folder',name:name.trim(),children:[]}; data.projects.push(f); if(!data.tiles.projects) data.tiles.projects=[]; data.tiles.projects.push({id:f.id, kind:'folder', size:'wide', hidden:false}); }); }
+  removeFolder(id){ this.update(data=>{ data.projects=data.projects.filter(x=>x.id!==id); data.tiles.projects=(data.tiles.projects||[]).filter(t=>t.id!==id); }); }
+  addEntry(folderId,name){ if(!name||!name.trim())return; this.update(data=>{ const f=data.projects.find(x=>x.id===folderId); if(f) f.children.push({id:U.uid(),type:'entry',name,description:'',status:'Future',deactivated:false}); }); }
+
+  addCurriculum(tab,json){
+    try{
+      const obj = JSON.parse(json);
+      if(!obj.skill_name) throw new Error('missing skill_name');
+      obj.status='active'; obj.startDate=U.todayKey(); obj.notes=obj.notes||''; obj.blocks=[];
+      (obj.modules||[]).forEach(m=>{ (m.tree_nodes||[]).forEach(n=>{ if(n.done===undefined) n.done=false; }); (m.daily_drills||[]).forEach(d=>{ if(d.done===undefined) d.done=false; }); (m.projects||[]).forEach(p=>{ if(p.done===undefined) p.done=false; }); });
+      this.update(data=>{ data.curricula[tab].push(obj); });
+      this.setState(s=>({importErrors:{...s.importErrors,[tab]:null}}));
+      return true;
+    }catch(e){ this.setState(s=>({importErrors:{...s.importErrors,[tab]:'Could not parse that JSON — check it matches the schema.'}})); return false; }
+  }
+  toggleNode(tab,ci,mi,nid){ this.update(data=>{ const n=data.curricula[tab][ci].modules[mi].tree_nodes.find(x=>x.id===nid); if(n) n.done=!n.done; }); }
+  toggleDrill(tab,ci,mi,di){ this.update(data=>{ data.curricula[tab][ci].modules[mi].daily_drills[di].done=!data.curricula[tab][ci].modules[mi].daily_drills[di].done; }); }
+  toggleProj(tab,ci,mi,pi){ this.update(data=>{ data.curricula[tab][ci].modules[mi].projects[pi].done=!data.curricula[tab][ci].modules[mi].projects[pi].done; }); }
+  setCurNotes(tab,ci,val){ this.update(data=>{ data.curricula[tab][ci].notes=val; }); }
+  addCurriculumResource(tab,ci,title,url){ if(!title)return; this.update(data=>{ if(!data.curricula[tab][ci].resources) data.curricula[tab][ci].resources=[]; data.curricula[tab][ci].resources.push({title,url:url||'',cost:'free'}); }); }
+  deactivateCurriculum(tab,ci){ this.update(data=>{ data.curricula[tab][ci].status='deactivated'; }); }
+  removeCurriculum(tab,ci){ this.update(data=>{ data.curricula[tab].splice(ci,1); }); }
+  addTabBlock(tab,type){ this.update(data=>{ data.tabContent[tab].blocks.push({id:U.uid(),type,content:''}); }); }
+
+  pomodoroStart(){ if(this._pomTimer) return; const workS=(this.props.pomodoroWorkMinutes??25)*60, breakS=(this.props.pomodoroBreakMinutes??5)*60;
+    this.setState(s=>({pomodoro:{...s.pomodoro, running:true}}));
+    this._pomTimer=setInterval(()=>{ this.setState(s=>{ let {mode,secondsLeft,cycles}=s.pomodoro; secondsLeft--; if(secondsLeft<=0){ if(mode==='work'){ mode='break'; secondsLeft=breakS; cycles=cycles+1; } else { mode='work'; secondsLeft=workS; } } return {pomodoro:{mode,secondsLeft,cycles,running:true}}; }); },1000); }
+  pomodoroPause(){ if(this._pomTimer){ clearInterval(this._pomTimer); this._pomTimer=null; } this.setState(s=>({pomodoro:{...s.pomodoro,running:false}})); }
+  pomodoroReset(){ this.pomodoroPause(); this.setState({pomodoro:{mode:'work',secondsLeft:(this.props.pomodoroWorkMinutes??25)*60,running:false,cycles:0}}); }
+
+  renderChart(t,heightPx){
+    const pts=(t.points||[]).filter(p=>p.label);
+    if(!pts.length) return E('p',{className:'text-muted',style:{fontSize:'12px'}},'Add rows below to plot this chart.');
+    const max=Math.max(...pts.map(p=>Number(p.value)||0),1);
+    if(t.chartType==='pie'){
+      let cum=0; const total=pts.reduce((a,p)=>a+(Number(p.value)||0),0)||1;
+      const stops=pts.map((p,i)=>{ const v=Number(p.value)||0; const start=cum/total*100; cum+=v; const end=cum/total*100; return PALETTE[i%PALETTE.length]+' '+start.toFixed(1)+'% '+end.toFixed(1)+'%'; }).join(', ');
+      return E('div',{style:{display:'flex',gap:'12px',alignItems:'center',flexWrap:'wrap'}},
+        E('div',{style:{width:heightPx,height:heightPx,minWidth:'40px',borderRadius:'50%',background:'conic-gradient('+stops+')',flex:'none'}}),
+        E('div',null, pts.map((p,i)=>E('div',{key:i,style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'11px'}}, E('span',{style:{width:'8px',height:'8px',borderRadius:'50%',background:PALETTE[i%PALETTE.length],display:'inline-block'}}), p.label))));
+    }
+    if(t.chartType==='line'){
+      const W=Math.max(200,pts.length*50), H=parseInt(heightPx)||90, padL=6,padR=6,padT=8,padB=8;
+      const linePts=pts.map((p,i)=>{ const x=padL+i*((W-padL-padR)/Math.max(1,pts.length-1)); const v=Number(p.value)||0; const y=padT+(1-v/max)*(H-padT-padB); return x.toFixed(1)+','+y.toFixed(1); }).join(' ');
+      return E('svg',{viewBox:'0 0 '+W+' '+H,style:{width:'100%',height:heightPx,display:'block'},preserveAspectRatio:'xMinYMid meet'}, E('polyline',{points:linePts,fill:'none',stroke:'var(--color-accent-600)',strokeWidth:2}));
+    }
+    const H=parseInt(heightPx)||90;
+    return E('div',{style:{display:'flex',gap:'8px',alignItems:'flex-end',height:heightPx}}, pts.map((p,i)=>E('div',{key:i,style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',flex:1,height:'100%',justifyContent:'flex-end'}},
+      E('div',{style:{width:'100%',maxWidth:'28px',height:((Number(p.value)||0)/max*(H-16))+'px',background:PALETTE[i%PALETTE.length],borderRadius:'4px 4px 0 0'}}),
+      E('span',{style:{fontSize:'9px'}},p.label))));
+  }
+  chartFullEditor(tabKey,t){
+    return E('div',null,
+      E('input',{className:'input',defaultValue:t.name,placeholder:'Chart name',style:{marginBottom:'8px'},onBlur:(e)=>this.setChartField(tabKey,t.id,'name',e.target.value)}),
+      E('select',{className:'input',defaultValue:t.chartType,style:{marginBottom:'10px',width:'auto'},onChange:(e)=>this.setChartField(tabKey,t.id,'chartType',e.target.value)},
+        E('option',{value:'bar'},'Bar'),E('option',{value:'line'},'Line'),E('option',{value:'pie'},'Pie')),
+      this.renderChart(t,'150px'),
+      E('div',{style:{marginTop:'12px'}}, (t.points||[]).map((p,i)=>E('div',{key:i,style:{display:'flex',gap:'6px',marginBottom:'4px',alignItems:'center'}},
+        E('input',{className:'input',style:{flex:1},defaultValue:p.label,placeholder:'Label',onBlur:(e)=>this.setChartPoint(tabKey,t.id,i,'label',e.target.value)}),
+        E('input',{className:'input',style:{width:'90px'},type:'number',defaultValue:p.value,onBlur:(e)=>this.setChartPoint(tabKey,t.id,i,'value',Number(e.target.value)||0)}),
+        E('button',{className:'cmd-x-btn',onClick:()=>this.removeChartPoint(tabKey,t.id,i)},'×')))),
+      E('button',{className:'btn btn-secondary',onClick:()=>this.addChartPoint(tabKey,t.id)},'+ Row'));
+  }
+
+  // — consistency heatmaps: one small shared cell-renderer, plus two views built on it —
+  //   a compact recent-days strip (for the tile itself, no wasted gray) and a scrollable
+  //   multi-month history (for the modal, so past months are actually reachable).
+  renderHeatCells(cells, maxWidth, cols){
+    const today = U.todayKey();
+    const cellEls = cells.map((c,i)=>{
+      if(!c) return E('div',{key:'b'+i,style:{aspectRatio:'1'}});
+      let bg = HEAT_COLORS.empty, mark=null;
+      if(c.pct===null || c.pct===undefined){ bg = HEAT_COLORS.empty; }
+      else if(c.pct===0){ bg='color-mix(in srgb, '+HEAT_COLORS.red+' 55%, transparent)'; mark='✕'; }
+      else if(c.pct<50){ bg=HEAT_COLORS.red; } else if(c.pct<80){ bg=HEAT_COLORS.yellow; } else if(c.pct<100){ bg=HEAT_COLORS.green; }
+      else { bg=HEAT_COLORS.green; mark='✓'; }
+      const isToday = c.key===today;
+      const dayNum = new Date(c.key+'T12:00:00').getDate();
+      return E('div',{key:c.key,className:'cmd-heat-cell',title:(isToday?'Today — ':'')+c.key+(c.pct!=null?' — '+Math.round(c.pct)+'%':' — no data'),
+        style:{aspectRatio:'1',background:bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',color:'#fff',borderRadius:'3px',
+          boxShadow: isToday?'0 0 0 2px var(--color-accent)':'none'}}, mark, !mark ? String(dayNum) : null);
+    });
+    return E('div',{style:{display:'grid',gridTemplateColumns:'repeat('+(cols||7)+',1fr)',gap:'3px',maxWidth:maxWidth||'auto'}}, cellEls);
+  }
+  buildHeatmapMonth(monthKey, getPct, maxWidth){
+    const [y,m] = monthKey.split('-').map(Number);
+    const daysInMonth = new Date(y,m,0).getDate();
+    const startWeekday = new Date(y,m-1,1).getDay();
+    const today = U.todayKey();
+    const cells = [];
+    for(let i=0;i<startWeekday;i++) cells.push(null);
+    for(let d=1; d<=daysInMonth; d++){ const key = y+'-'+U.pad(m)+'-'+U.pad(d); const future = key > today; cells.push({key, pct: future ? null : getPct(key)}); }
+    return this.renderHeatCells(cells, maxWidth);
+  }
+  // Recent-days strip: today first (leftmost), one flat row, no calendar padding —
+  // just the last N days in order, so it always fits a single compact row.
+  buildHeatmapRecent(getPct, daysBack){
+    daysBack = daysBack || 7;
+    const today = U.todayKey();
+    const cells = []; for(let i=0;i<daysBack;i++){ const key=U.addDays(today,-i); cells.push({key, pct:getPct(key)}); }
+    return this.renderHeatCells(cells, undefined, daysBack);
+  }
+  buildHeatmapHistory(getPct, monthsBack){
+    monthsBack = monthsBack || 6;
+    const now = new Date();
+    const months = []; for(let i=0;i<monthsBack;i++){ const d=new Date(now.getFullYear(), now.getMonth()-i, 1); months.push(d.getFullYear()+'-'+U.pad(d.getMonth()+1)); }
+    return E('div',{style:{display:'flex',flexDirection:'column',gap:14,maxHeight:320,overflowY:'auto',paddingRight:4}},
+      months.map(mk=>E('div',{key:mk},
+        E('div',{style:{fontSize:11,fontWeight:600,color:'var(--color-accent-700)',marginBottom:4}}, new Date(mk+'-01T12:00:00').toLocaleDateString(undefined,{month:'long',year:'numeric'})),
+        this.buildHeatmapMonth(mk, getPct, '230px'))));
+  }
+
+  buildBodyTrend(data,heightPx,legend){
+    const today = U.todayKey();
+    const days = []; for(let i=29;i>=0;i--) days.push(U.addDays(today,-i));
+    const H=parseInt(heightPx)||100, padL=6, padR=6, padT=8, padB=8;
+    const W=Math.max(240, days.length*(heightPx?6:22));
+    const series = [
+      {label:'Weight', color:'var(--color-accent-900)', getVal:(d)=>{ const v=data.days[d]&&data.days[d].weight; return v!==undefined&&v!=='' ? Number(v) : null; }},
+      {label:'Calories', color:'var(--color-accent-500)', getVal:(d)=>{ const v=data.days[d]&&data.days[d].calories; return v!==undefined&&v!=='' ? Number(v) : null; }},
+      {label:'Water', color:'var(--color-neutral-600)', getVal:(d)=>{ const day=data.days[d]; if(!day) return null; return this.getCounterVal(data,day,{id:'water'}); }}
+    ];
+    const lines = series.map((s)=>{
+      const raw = days.map(d=>s.getVal(d));
+      const vals = raw.filter(v=>v!==null && !isNaN(v));
+      const min = vals.length?Math.min(...vals):0, max = vals.length?Math.max(...vals):1;
+      const pts = raw.map((v,i)=>{ if(v===null||isNaN(v)) return null; const norm = max===min?50:(v-min)/(max-min)*100; const x=padL+i*((W-padL-padR)/(days.length-1)); const y=padT+(100-norm)/100*(H-padT-padB); return x.toFixed(1)+','+y.toFixed(1); }).filter(Boolean).join(' ');
+      return { label:s.label, color:s.color, pts };
+    });
+    const svg = E('svg',{viewBox:'0 0 '+W+' '+H,style:{display:'block',width:'100%',height:heightPx||'auto'},preserveAspectRatio:'xMinYMid meet'}, lines.map((l,i)=>E('polyline',{key:i,points:l.pts,fill:'none',stroke:l.color,strokeWidth:2})));
+    if(legend===false) return svg;
+    const legendEl = E('div',{style:{display:'flex',gap:'12px',flexWrap:'wrap',marginTop:'6px'}}, lines.map((l,i)=>E('div',{key:i,style:{display:'flex',alignItems:'center',gap:'5px',fontSize:'11px'}}, E('span',{style:{width:'14px',height:'2px',background:l.color,display:'inline-block'}}), l.label)));
+    return E('div',null, svg, legendEl);
+  }
+
+  buildHabitGraph(data,heightPx,legend,hiddenIds){
+    const today = U.todayKey();
+    const days = []; for(let i=29;i>=0;i--) days.push(U.addDays(today,-i));
+    const H=parseInt(heightPx)||100, padL=6, padR=6, padT=8, padB=8;
+    const W=Math.max(240, days.length*(heightPx?6:22));
+    const lines = (data.habits||[]).map((h,idx)=>{
+      if(hiddenIds && hiddenIds.includes(h.id)) return null;
+      const raw = days.map(d=>h.history[d]!==undefined?h.history[d]:null);
+      const vals = raw.filter(v=>v!==null);
+      const min = vals.length?Math.min(...vals):0, max = vals.length?Math.max(...vals):1;
+      const norm = raw.map(v=>{ if(v===null) return null; if(max===min) return 50; const pct=(v-min)/(max-min)*100; return h.direction==='decrease'?100-pct:pct; });
+      const pts = norm.map((v,i)=>{ if(v===null) return null; const x=padL+i*((W-padL-padR)/(days.length-1)); const y=padT+(100-v)/100*(H-padT-padB); return x.toFixed(1)+','+y.toFixed(1); }).filter(Boolean).join(' ');
+      return { name:h.name, color:HABIT_COLORS[idx%HABIT_COLORS.length], dash:HABIT_DASH[idx%HABIT_DASH.length], pts };
+    }).filter(Boolean);
+    const svg = E('svg',{viewBox:'0 0 '+W+' '+H,style:{display:'block',width:'100%',height:heightPx||'auto'},preserveAspectRatio:'xMinYMid meet'}, lines.map((l,i)=>E('polyline',{key:i,points:l.pts,fill:'none',stroke:l.color,strokeWidth:2,strokeDasharray:l.dash})));
+    if(legend===false) return svg;
+    const legendEl = E('div',{style:{display:'flex',gap:'12px',flexWrap:'wrap',marginTop:'6px'}}, lines.map((l,i)=>E('div',{key:i,style:{display:'flex',alignItems:'center',gap:'5px',fontSize:'11px'}}, E('span',{style:{width:'14px',height:'2px',background:l.color,display:'inline-block'}}), l.name)));
+    return E('div',null, svg, legendEl);
+  }
+
+  buildSkillTree(mod, tab, ci, mi){
+    const nodes = mod.tree_nodes||[];
+    const depthCache = {};
+    const depthOf = (id)=>{ if(depthCache[id]!==undefined) return depthCache[id]; const n = nodes.find(x=>x.id===id); if(!n || !n.prerequisites || !n.prerequisites.length){ depthCache[id]=0; return 0; } const d = 1+Math.max(...n.prerequisites.map(p=>depthOf(p))); depthCache[id]=d; return d; };
+    nodes.forEach(n=>depthOf(n.id));
+    const maxDepth = nodes.length?Math.max(...nodes.map(n=>depthCache[n.id])):0;
+    const layers = []; for(let d=0;d<=maxDepth;d++) layers.push(nodes.filter(n=>depthCache[n.id]===d));
+    const NODE_W=170, NODE_H=64, GAP_X=24, GAP_Y=46;
+    const maxCols = Math.max(1,...layers.map(l=>l.length));
+    const W = maxCols*(NODE_W+GAP_X), H = layers.length*(NODE_H+GAP_Y);
+    const pos = {};
+    layers.forEach((layer,d)=>{ const rowW = layer.length*(NODE_W+GAP_X); const offsetX=(W-rowW)/2; layer.forEach((n,i)=>{ pos[n.id]={x:offsetX+i*(NODE_W+GAP_X)+GAP_X/2, y:d*(NODE_H+GAP_Y)+GAP_Y/2}; }); });
+    const lines = [];
+    nodes.forEach(n=>{ (n.prerequisites||[]).forEach(p=>{ if(pos[p] && pos[n.id]){ lines.push(E('line',{key:p+'-'+n.id, x1:pos[p].x+NODE_W/2, y1:pos[p].y+NODE_H, x2:pos[n.id].x+NODE_W/2, y2:pos[n.id].y, stroke:'var(--color-accent-500)', strokeWidth:1.5})); } }); });
+    const boxes = nodes.map(n=>{ const p=pos[n.id]; const toggle=()=>this.toggleNode(tab,ci,mi,n.id);
+      return E('div',{key:n.id, onClick:toggle, title:n.description||'', style:{position:'absolute', left:p.x, top:p.y, width:NODE_W, height:NODE_H, border:'1px solid var(--color-divider)', borderRadius:'8px', background:n.done?'var(--color-accent-100)':'var(--color-bg)', padding:'6px 8px', fontSize:'12px', cursor:'pointer', overflow:'hidden', boxShadow:'var(--shadow-sm)'}},
+        E('div',{style:{fontWeight:600, color: n.done?'var(--color-accent-800)':'inherit'}}, (n.done?'✓ ':'')+n.title));
+    });
+    return E('div',{style:{position:'relative', width:W, height:H, minWidth:'100%'}}, E('svg',{width:W,height:H,style:{position:'absolute',left:0,top:0}}, lines), boxes);
+  }
+
+  buildOverviewFlow(c){
+    const mods = c.modules.slice().sort((a,b)=>a.module_number-b.module_number);
+    const boxes = mods.map((m,i)=>{
+      const total = (m.tree_nodes||[]).length + (m.daily_drills||[]).length + (m.projects||[]).length || 1;
+      const done = (m.tree_nodes||[]).filter(n=>n.done).length + (m.daily_drills||[]).filter(d=>d.done).length + (m.projects||[]).filter(p=>p.done).length;
+      const pct = Math.round(done/total*100);
+      return E('div',{key:i, style:{display:'flex',alignItems:'center',gap:'10px'}},
+        E('div',{style:{border:'1px solid var(--color-divider)', borderRadius:'8px', padding:'10px 14px', minWidth:'140px', background: pct===100?'var(--color-accent-100)':'var(--color-bg)'}},
+          E('div',{style:{fontSize:'11px',color:'var(--color-accent-800)'}}, 'Module '+m.module_number),
+          E('div',{style:{fontWeight:600, fontSize:'13px'}}, m.title),
+          E('div',{style:{fontSize:'11px',marginTop:'4px'}}, pct+'%')),
+        i<mods.length-1 ? E('span',{style:{color:'var(--color-accent)',fontSize:'20px'}}, '→') : null
+      );
+    });
+    return E('div',{style:{display:'flex',alignItems:'center',flexWrap:'wrap',gap:'6px',overflowX:'auto',padding:'8px 0'}}, boxes);
+  }
+
+  buildTextListEditor(field, items){
+    const rows = (items||[]).map((v,idx)=>E('div',{key:idx, style:{display:'flex',alignItems:'center',gap:'6px',marginBottom:'2px'}},
+      E('span',{style:{flex:1,fontSize:'13px'}}, v), E('button',{className:'cmd-x-btn', onClick:()=>this.removeDevotionListItem(field,idx)}, '×')));
+    const onKey = (e)=>{ if(e.key==='Enter'){ this.addDevotionListItem(field, e.target.value); e.target.value=''; } };
+    return E('div',null, rows, E('input',{className:'input', style:{fontSize:'12px',marginTop:'4px'}, placeholder:'Add + Enter', onKeyDown:onKey}));
+  }
+
+  renderMiniChart(content){
+    if(!content) return null;
+    const parts = content.split(',').map(p=>p.trim()).filter(Boolean).map(p=>{ const [l,v]=p.split(':'); return {l:(l||'').trim(), v:Number(v)||0}; });
+    if(!parts.length) return null;
+    const max = Math.max(...parts.map(p=>p.v),1);
+    return E('div',{style:{display:'flex',gap:'8px',alignItems:'flex-end',height:'80px',marginTop:'6px'}},
+      parts.map((p,i)=>E('div',{key:i,style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}},
+        E('div',{style:{width:'20px',height:(p.v/max*60)+'px',background:'var(--color-accent-600)'}}), E('span',{style:{fontSize:'10px'}},p.l))));
+  }
+
+  // — JSON data block: if the pasted JSON matches a tiny recognized shape schema
+  //   ({shape:'circle'|'rect'|'line'|'text', ...}, or an array/`.shapes` list of those),
+  //   actually draw it as SVG instead of just showing the text back.
+  buildJsonShapes(obj,maxH){
+    const list = Array.isArray(obj) ? obj : (obj && Array.isArray(obj.shapes)) ? obj.shapes : (obj && typeof obj.shape==='string') ? [obj] : null;
+    if(!list || !list.length) return null;
+    let maxX=10, maxY=10;
+    const grow = (x,y)=>{ if(x>maxX) maxX=x; if(y>maxY) maxY=y; };
+    const els = list.map((s,i)=>{
+      if(!s || typeof s.shape!=='string') return null;
+      const color = s.color || 'var(--color-accent-600)';
+      const filled = s.filled!==false;
+      const fillProps = filled ? {fill:color,stroke:'none'} : {fill:'none',stroke:color,strokeWidth:2};
+      if(s.shape==='circle'){ const cx=s.center?.x||0, cy=s.center?.y||0, r=s.radius||10; grow(cx+r,cy+r); return E('circle',{key:i,cx,cy,r,...fillProps}); }
+      if(s.shape==='rect'){ const x=s.x||0,y=s.y||0,w=s.width||10,h=s.height||10; grow(x+w,y+h); return E('rect',{key:i,x,y,width:w,height:h,...fillProps}); }
+      if(s.shape==='line'){ const x1=s.x1||0,y1=s.y1||0,x2=s.x2||0,y2=s.y2||0; grow(Math.max(x1,x2),Math.max(y1,y2)); return E('line',{key:i,x1,y1,x2,y2,stroke:color,strokeWidth:s.width||2}); }
+      if(s.shape==='text'){ const x=s.x||0,y=s.y||0; grow(x+40,y); return E('text',{key:i,x,y,fill:color,fontSize:s.size||14},s.text||''); }
+      return null;
+    }).filter(Boolean);
+    if(!els.length) return null;
+    const pad=10;
+    return E('svg',{viewBox:'0 0 '+(maxX+pad)+' '+(maxY+pad),style:{width:'100%',maxHeight:maxH||180,display:'block'},preserveAspectRatio:'xMidYMid meet'}, els);
+  }
+
+  buildBlocksList(tabKey){
+    const tc = this.state.data.tabContent[tabKey];
+    return E('div',null,
+      tc.blocks.map(b=>E('div',{key:b.id,style:{border:'1px solid var(--color-divider)',borderRadius:'8px',padding:'8px',marginBottom:'8px'}},
+        E('div',{style:{display:'flex',justifyContent:'space-between'}}, E('span',{className:'tag tag-neutral'},b.type), E('button',{className:'cmd-x-btn',onClick:()=>this.removeListItem(['tabContent',tabKey,'blocks'],b.id)},'×')),
+        b.type==='image' ? E('div',{style:{marginTop:'6px'}},
+          E('input',{className:'input',placeholder:'Image URL',defaultValue:b.content,onBlur:(e)=>this.update(d=>{d.tabContent[tabKey].blocks.find(x=>x.id===b.id).content=e.target.value;})}),
+          b.content ? E('img',{src:b.content,style:{maxWidth:'100%',marginTop:'6px',borderRadius:'8px'}}) : null)
+        : b.type==='chart' ? E('div',{style:{marginTop:'6px'}},
+          E('input',{className:'input',placeholder:'Label:Value, Label:Value',defaultValue:b.content,onBlur:(e)=>this.update(d=>{d.tabContent[tabKey].blocks.find(x=>x.id===b.id).content=e.target.value;})}),
+          this.renderMiniChart(b.content))
+        : b.type==='json' ? E('div',{style:{marginTop:'6px'}},
+          E('textarea',{className:'input',style:{fontFamily:'monospace',fontSize:'11px'},defaultValue:b.content,placeholder:'Paste JSON data…',onBlur:(e)=>this.update(d=>{d.tabContent[tabKey].blocks.find(x=>x.id===b.id).content=e.target.value;})}),
+          (()=>{ try{ const obj=JSON.parse(b.content||'null'); if(!obj) return null; return E('pre',{style:{fontSize:'11px',background:'var(--color-surface)',padding:'6px',marginTop:'6px',overflow:'auto',maxHeight:'160px'}}, JSON.stringify(obj,null,2)); }catch(e){ return E('p',{style:{fontSize:'11px',color:'#c96a4f'}},'Invalid JSON'); } })())
+        : E('textarea',{className:'input',style:{marginTop:'6px'},defaultValue:b.content,placeholder: b.type==='link'?'URL':'Text', onBlur:(e)=>this.update(d=>{d.tabContent[tabKey].blocks.find(x=>x.id===b.id).content=e.target.value;})})
+      )),
+      E('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}}, ['text','link','image','chart','json'].map(t=>E('button',{key:t,className:'btn btn-secondary',onClick:()=>this.addTabBlock(tabKey,t)}, '+ '+t)))
+    );
+  }
+
+  buildCurriculumCardVM(c, tab, ci){
+    const total = c.modules.reduce((a,m)=>a+ (m.tree_nodes||[]).length + (m.daily_drills||[]).length + (m.projects||[]).length, 0) || 1;
+    const done = c.modules.reduce((a,m)=>a+ (m.tree_nodes||[]).filter(n=>n.done).length + (m.daily_drills||[]).filter(d=>d.done).length + (m.projects||[]).filter(p=>p.done).length, 0);
+    let pct = Math.round(done/total*100);
+    const isSoftDone = c.type==='soft' && pct>=100;
+    if(isSoftDone) pct = null;
+    const id = tab+'-'+ci;
+    const open = this.getUi(id,'open',false);
+    const sec = (key,def)=>({ open:this.getUi(id+'.'+key,'o',def), toggle:()=>this.toggleUi(id+'.'+key,'o',def) });
+    const modulesVM = c.modules.map((m,mi)=>({
+      title:m.title, description:m.description, treeEl: this.buildSkillTree(m,tab,ci,mi),
+      lessons: m.lessons||[],
+      drills:(m.daily_drills||[]).map((d,di)=>({title:d.title,description:d.description,done:d.done,toggle:()=>this.toggleDrill(tab,ci,mi,di)})),
+      projects:(m.projects||[]).map((p,pi)=>({title:p.title,description:p.description,unlocks:p.unlocks_after,done:p.done,toggle:()=>this.toggleProj(tab,ci,mi,pi)}))
+    }));
+    return {
+      id, name:c.skill_name, type:c.type, status:c.status, startDate:c.startDate, pct, isSoftDone,
+      open, toggle:()=>this.toggleUi(id,'open',false), icon: open?'−':'+',
+      overviewEl: this.buildOverviewFlow(c),
+      why:c.why, intro:c.intro_paragraph, goals:c.goals||[], mastery:c.mastery_definition,
+      resources:c.resources||[], notes:c.notes||'', setNotes:(e)=>this.setCurNotes(tab,ci,e.target.value),
+      addResource:()=>{ const t=document.getElementById('curres-title-'+id).value, u=document.getElementById('curres-url-'+id).value; if(t){ this.addCurriculumResource(tab,ci,t,u); document.getElementById('curres-title-'+id).value=''; document.getElementById('curres-url-'+id).value=''; } },
+      modules: modulesVM,
+      deactivate:()=>this.deactivateCurriculum(tab,ci), remove:()=>this.removeCurriculum(tab,ci),
+      sOverview:sec('overview',true), sIntro:sec('intro',true), sGoals:sec('goals',false), sModules:sec('modules',true), sResources:sec('resources',false), sNotes:sec('notes',false)
+    };
+  }
+
+  renderVals(){
+    const data = this.state.data;
+    const U2 = U;
+    const today = U2.todayKey();
+    const viewDate = this.state.viewDate;
+    const bodyDayRaw = this.ensureDayReadonly(data, viewDate);
+    const wd = U2.weekdayOf(today);
+
+    const TABS = [ ['dashboard','Dashboard'], ['daily','Daily'], ['finances','Finances'], ['body','Body'], ['civ','Civ Studies'], ['stem','STEM'], ['bible','Bible'], ['projects','Projects'], ['resources','Resources'] ]
+      .map(([k,l])=>[k, data.tabLabelOverrides[k]||l])
+      .concat(data.customTabs.map(t=>[t.id,t.label])).concat([['settings','Settings']]);
+    if(!data.hiddenTabs) data.hiddenTabs=[];
+    const visibleTABS = TABS.filter(([key])=> key==='settings' || !data.hiddenTabs.includes(key));
+    const tabs = visibleTABS.map(([key,label])=>({ key, label, select:()=>this.setTab(key), selectAndClose:()=>{ this.setTab(key); this.setState({moreTabsOpen:false}); },
+      style:{background: this.state.activeTab===key?'var(--color-accent)':'transparent', color: this.state.activeTab===key?'var(--color-bg)':'var(--color-text)', borderColor: this.state.activeTab===key?'var(--color-accent)':'var(--color-divider)'},
+      menuStyle:{justifyContent:'flex-start', background: this.state.activeTab===key?'var(--color-accent-100)':'transparent', color: this.state.activeTab===key?'var(--color-accent-800)':'var(--color-text)', fontWeight: this.state.activeTab===key?'600':'400'} }));
+    const activeTabLabel = (visibleTABS.find(t=>t[0]===this.state.activeTab)||[,this.state.activeTab])[1];
+    const tabKey = this.state.activeTab;
+
+    const vals = {
+      isDashboard: tabKey==='dashboard', isDaily: tabKey==='daily', isFinances: tabKey==='finances', isBody: tabKey==='body',
+      isStem: tabKey==='stem', isBible: tabKey==='bible', isCiv: tabKey==='civ', isProjects: tabKey==='projects', isResources: tabKey==='resources',
+      isSettings: tabKey==='settings',
+      tabs, moreTabsOpen: this.state.moreTabsOpen, toggleMoreTabs: ()=>this.setState(s=>({moreTabsOpen:!s.moreTabsOpen})),
+      moreTabsIconStyle: this.state.moreTabsOpen?'transform:rotate(180deg)':'transform:rotate(0deg)',
+      activeTabLabel, streakDays: data.streak||1, stopProp: (e)=>e.stopPropagation(),
+    };
+
+    vals.hideCompleted = this.state.hideCompleted; vals.toggleHideCompleted = ()=>this.setState(s=>({hideCompleted:!s.hideCompleted}));
+    vals.dueToasts = (this.state.dueToasts||[]).map(t=>({id:t.id, text:t.text, dismiss:()=>this.dismissToast(t.id)})); vals.hasToasts = vals.dueToasts.length>0;
+    const hc = this.state.hideCompleted;
+
+    const day0 = this.ensureDayReadonly(data, today);
+    let totalCount=0, doneCount=0;
+    data.dailyRecurring.forEach(t=>{ totalCount++; if(day0.dailyDone[t.id]) doneCount++; });
+    data.weeklyTasks.filter(t=>t.days.includes(wd)).forEach(t=>{ totalCount++; if(day0.weeklyDone[t.id]) doneCount++; });
+    (data.weekdayChunks[wd]||[]).forEach(t=>{ totalCount++; if(day0.wdChunkDone[t.id]) doneCount++; });
+    Object.keys(data.chunks).forEach(cn=>data.chunks[cn].forEach(it=>{ totalCount++; if(day0.chunkDone[it.id]) doneCount++; }));
+    vals.todayDoneCount = doneCount; vals.todayTotalCount = totalCount;
+    vals.todayProgressPct = totalCount?Math.round(doneCount/totalCount*100):0;
+    vals.todayProgressBarStyle = { width: vals.todayProgressPct+'%' };
+    const focusTab = U2.FOCUS_MAP[wd];
+    vals.hasFocus = !!focusTab; vals.focusLabel = 'Focus: '+focusTab; vals.focusGo = ()=>this.setTab(focusTab==='STEM'?'stem':focusTab==='Bible'?'bible':'civ');
+
+    vals.habitDetailOpen = this.state.habitDetailOpen; vals.habitDetailLabel = this.state.habitDetailOpen ? '− Hide detail' : '+ View detail (numbers)';
+    vals.toggleHabitDetail = ()=>this.setState(s=>({habitDetailOpen:!s.habitDetailOpen}));
+    vals.habitNames = data.habits.map(h=>({name:h.name}));
+    const detailDays = []; for(let i=13;i>=0;i--) detailDays.push(U2.addDays(today,-i));
+    vals.habitDetailRows = detailDays.map(d=>({ date:d, cells: data.habits.map(h=>({ value: h.history[d]!==undefined?h.history[d]:'—' })) }));
+
+    const dailyHeatmapPct = (key)=>{ const d = data.days[key]; if(!d) return null; const total = data.dailyRecurring.length; if(!total) return null; const done = data.dailyRecurring.filter(t=>d.dailyDone[t.id]).length; return done/total*100; };
+
+    vals.dailyRecurringVM = data.dailyRecurring.map(t=>({ id:t.id, text:t.text, done: !!day0.dailyDone[t.id], toggle:()=>this.toggleDailyDone(t.id), rename:(e)=>this.renameListItem(['dailyRecurring'],t.id,'text',e.target.value), remove:()=>this.removeListItem(['dailyRecurring'],t.id) })).filter(it=>!hc||!it.done);
+    vals.addDailyRecurringKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['dailyRecurring'],{id:U2.uid(),text:e.target.value.trim()}); e.target.value=''; } };
+
+    vals.adHocVM = data.adHoc.map(t=>({ id:t.id, text:t.text, done:t.done, deadline:t.deadline||'', toggle:()=>this.toggleAdHoc(t.id), rename:(e)=>this.renameListItem(['adHoc'],t.id,'text',e.target.value), setDeadline:(e)=>this.renameListItem(['adHoc'],t.id,'deadline',e.target.value), remove:()=>this.removeListItem(['adHoc'],t.id) })).filter(it=>!hc||!it.done);
+    vals.addAdHocKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['adHoc'],{id:U2.uid(),text:e.target.value.trim(),done:false,deadline:''}); e.target.value=''; } };
+
+    vals.weekdayChunksVM = U2.WEEKDAYS.map(dname=>({ label:dname, notToday: dname!==wd, highlightStyle: dname===wd?'box-shadow: inset 0 0 0 2px var(--color-accent);':'',
+      items:(data.weekdayChunks[dname]||[]).map(it=>({ id:it.id, text:it.text, done: !!day0.wdChunkDone[it.id], toggle:()=>this.toggleWdChunkDone(it.id), rename:(e)=>this.renameListItem(['weekdayChunks',dname],it.id,'text',e.target.value), remove:()=>this.removeListItem(['weekdayChunks',dname],it.id) })).filter(it=>!hc||dname!==wd||!it.done),
+      addKey:(e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['weekdayChunks',dname],{id:U2.uid(),text:e.target.value.trim()}); e.target.value=''; } } }));
+
+    vals.weeklyVM = data.weeklyTasks.map(t=>({ id:t.id, text:t.text, done: !!day0.weeklyDone[t.id], notToday: !t.days.includes(wd), doneToday: !!day0.weeklyDone[t.id], notes: t.notes||'',
+      expanded: this.getUi('wk-'+t.id,'open',false), toggleExpand:()=>this.toggleUi('wk-'+t.id,'open',false), expandLabel: this.getUi('wk-'+t.id,'open',false)?'less':'more',
+      setNotes:(e)=>this.renameListItem(['weeklyTasks'],t.id,'notes',e.target.value),
+      toggle:()=>this.toggleWeeklyDone(t.id), rename:(e)=>this.renameListItem(['weeklyTasks'],t.id,'text',e.target.value), remove:()=>this.removeListItem(['weeklyTasks'],t.id),
+      dayChips: U2.WEEKDAYS.map(d=>({ label:d, style:{background: t.days.includes(d)?'var(--color-accent)':'transparent', color: t.days.includes(d)?'var(--color-bg)':'inherit', border:'1px solid var(--color-divider)', cursor:'pointer'}, toggle:()=>this.toggleWeeklyDay(t.id,d) })) })).filter(it=>!hc||!(it.doneToday && !it.notToday));
+    vals.addWeeklyKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['weeklyTasks'],{id:U2.uid(),text:e.target.value.trim(),days:[],notes:''}); e.target.value=''; } };
+
+    vals.chunksVM = U2.CHUNK_NAMES.map(cn=>({ name:cn, items: (data.chunks[cn]||[]).map(it=>({ id:it.id, text:it.text, done: !!day0.chunkDone[it.id], toggle:()=>this.toggleChunkDone(it.id), rename:(e)=>this.renameListItem(['chunks',cn],it.id,'text',e.target.value), remove:()=>this.removeListItem(['chunks',cn],it.id) })).filter(it=>!hc||!it.done),
+      addKey:(e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['chunks',cn],{id:U2.uid(),text:e.target.value.trim()}); e.target.value=''; } } }));
+
+    vals.countersVM = data.counters.map(c=>{ const val = this.getCounterVal(data,bodyDayRaw,c); const step = c.decimals?0.1:1; const open=this.getUi('counter-'+c.id,'open',false);
+      return { id:c.id, name:c.name, unit:c.unit, goal:c.goal, decimals:c.decimals, value: val, step, open,
+        toggleOpen:()=>this.toggleUi('counter-'+c.id,'open',false), iconStyle:{display:'inline-block',marginLeft:'auto',background:'none',border:'none',cursor:'pointer',transition:'transform .2s ease',transform:open?'rotate(0deg)':'rotate(-90deg)'},
+        inc:()=>this.incCounter(c.id, step, c.decimals), dec:()=>this.incCounter(c.id, -step, c.decimals),
+        setValue:(e)=>this.setCounterVal(c.id, e.target.value, c.decimals), setGoal:(e)=>this.setCounterField(c.id,'goal',Number(e.target.value)||1),
+        rename:(e)=>this.setCounterField(c.id,'name',e.target.value), setUnit:(e)=>this.setCounterField(c.id,'unit',e.target.value), toggleDecimals:()=>this.toggleCounterDecimals(c.id),
+        remove:()=>this.removeCounter(c.id), barStyle:{height:'100%',width:Math.min(100,(val/(c.goal||1))*100)+'%',background:'var(--color-accent-400)'} };
+    });
+    vals.addCounter = ()=>{ const n=document.getElementById('counterNameDraft'), u=document.getElementById('counterUnitDraft'), g=document.getElementById('counterGoalDraft'); this.addCounter(n.value,u.value,g.value); n.value='';u.value='';g.value=''; };
+
+    const todayDevo = day0.devotion;
+    const devo = bodyDayRaw.devotion;
+    const chapters = devo.chapters || {ot:0,nt:0,psalms:0,proverbs:0};
+    vals.devo = { memoryVerse: devo.memoryVerse, setMemoryVerse:(e)=>this.setDevotionField('memoryVerse',e.target.value), prayer5: devo.prayer5, togglePrayer5:()=>this.togglePrayer5(),
+      prayerOfDay: devo.prayerOfDay, setPrayerOfDay:(e)=>this.setDevotionField('prayerOfDay',e.target.value), newIdea: devo.newIdea, setNewIdea:(e)=>this.setDevotionField('newIdea',e.target.value),
+      chapterInputs: U2.BIBLE_CATEGORIES.map((c,i)=>({ key:c.key, label:c.label, value: chapters[c.key]||0, color: BIBLE_COLORS[i], setValue:(e)=>this.setChapterCount(c.key,e.target.value) })),
+      reqEl: this.buildTextListEditor('prayerRequests', devo.prayerRequests), thankEl: this.buildTextListEditor('thankful', devo.thankful) };
+    const devoMetCount = (dv)=>{ const ch=dv.chapters||{}; let met=0; if(dv.memoryVerse) met++; if((ch.nt||0)>=2) met++; if((ch.ot||0)>=3) met++; if((ch.psalms||0)>=3) met++; if((ch.proverbs||0)>=1) met++; if(dv.prayer5) met++; if(dv.prayerOfDay) met++; if(dv.newIdea) met++; if((dv.prayerRequests||[]).length>=3) met++; if((dv.thankful||[]).length>=3) met++; return met; };
+    vals.viewDateLabel = viewDate; vals.viewDatePrev=()=>this.shiftViewDate(-1); vals.viewDateNext=()=>this.shiftViewDate(1); vals.viewDateToday=()=>this.setViewDate(today);
+
+    const bibleTotals = {ot:0,nt:0,psalms:0,proverbs:0};
+    Object.keys(data.days).forEach(k=>{ const dv=data.days[k].devotion; if(dv && dv.chapters) U2.BIBLE_CATEGORIES.forEach(c=>{ bibleTotals[c.key]+=Number(dv.chapters[c.key])||0; }); });
+    vals.bibleCatVM = U2.BIBLE_CATEGORIES.map((c,i)=>{ const value=bibleTotals[c.key], pct=Math.min(100,Math.round(value/c.target*100));
+      return { key:c.key, label:c.label, value, target:c.target, pct, barStyle:{width:pct+'%', background:BIBLE_COLORS[i]} }; });
+    vals.resetBibleProgress = ()=>this.resetBibleProgress();
+
+    vals.journalVM = data.journal.map(j=>({ id:j.id, dateLabel:j.dateKey, text:j.text, remove:()=>this.update(d=>{ d.journal=d.journal.filter(x=>x.id!==j.id); }) }));
+    vals.addJournal = ()=>{ const el=document.getElementById('journalDraft'); if(el && el.value.trim()){ this.addJournalEntry(el.value.trim()); el.value=''; } };
+
+    vals.booksVM = data.bookList.map(b=>({ id:b.id, title:b.title, author:b.author, status:b.status, renameTitle:(e)=>this.renameListItem(['bookList'],b.id,'title',e.target.value), renameAuthor:(e)=>this.renameListItem(['bookList'],b.id,'author',e.target.value), setStatus:(e)=>this.renameListItem(['bookList'],b.id,'status',e.target.value), remove:()=>this.removeListItem(['bookList'],b.id) }));
+    vals.addBook = ()=>{ const t=document.getElementById('bookTitleDraft'), a=document.getElementById('bookAuthorDraft'); if(t.value.trim()){ this.addListItem(['bookList'],{id:U2.uid(),title:t.value.trim(),author:a.value.trim(),status:'to-read'}); t.value=''; a.value=''; } };
+
+    vals.habitsVM = data.habits.map(h=>({ id:h.id, name:h.name, direction:h.direction, todayValue: h.history[viewDate]!==undefined?h.history[viewDate]:0, inc:()=>this.logHabitDelta(h.id,1), dec:()=>this.logHabitDelta(h.id,-1), setValue:(e)=>this.setHabitValue(h.id,e.target.value), rename:(e)=>this.renameListItem(['habits'],h.id,'name',e.target.value), remove:()=>this.removeListItem(['habits'],h.id) }));
+    vals.addHabit = ()=>{ const n=document.getElementById('habitNameDraft'), d=document.getElementById('habitDirDraft'); if(n.value.trim()){ this.addListItem(['habits'],{id:U2.uid(),name:n.value.trim(),direction:d.value,history:{}}); n.value=''; } };
+
+    const fin = data.finances;
+    const periodFilter = (t)=>{ if(fin.period==='lifetime') return true; const days = fin.period==='weekly'?7:30; return t.date >= U2.addDays(today,-days); };
+    const txs = fin.transactions.filter(periodFilter);
+    const catTotals = {}; txs.forEach(t=>{ catTotals[t.catId]=(catTotals[t.catId]||0)+t.amount; });
+    const grand = Object.values(catTotals).reduce((a,b)=>a+b,0)||1;
+    let cum=0;
+    const gradientStops = fin.categories.map((c,i)=>{ const val=catTotals[c.id]||0; const start=cum/grand*100; cum+=val; const end=cum/grand*100; return PALETTE[i%PALETTE.length]+' '+start.toFixed(1)+'% '+end.toFixed(1)+'%'; }).join(', ');
+    vals.pieStyle = { width:'110px', height:'110px', borderRadius:'50%', background: grand>1?('conic-gradient('+gradientStops+')'):'var(--color-neutral-200)', flex:'none' };
+    vals.periodOptions = ['weekly','monthly','lifetime'].map(p=>({ label:p, active: fin.period===p, select:()=>this.update(d=>{d.finances.period=p;}) }));
+    vals.categoryVM = fin.categories.map((c,i)=>({ id:c.id, name:c.name, total: Math.round(catTotals[c.id]||0), dotStyle:{width:'10px',height:'10px',borderRadius:'50%',background:PALETTE[i%PALETTE.length],display:'inline-block'}, rename:(e)=>this.renameListItem(['finances','categories'],c.id,'name',e.target.value), remove:()=>this.removeListItem(['finances','categories'],c.id) }));
+    vals.addCategory = ()=>{ const el=document.getElementById('catNameDraft'); if(el.value.trim()){ this.addListItem(['finances','categories'],{id:U2.uid(),name:el.value.trim()}); el.value=''; } };
+    vals.categoryOptions = fin.categories.map(c=>({id:c.id,name:c.name}));
+    vals.addTransaction = ()=>{ const cat=document.getElementById('txCatDraft').value, amt=document.getElementById('txAmountDraft').value, dt=document.getElementById('txDateDraft').value; if(cat && amt){ this.addListItem(['finances','transactions'],{id:U2.uid(),catId:cat,amount:Number(amt),date: dt||today}); document.getElementById('txAmountDraft').value=''; } };
+    vals.transactionsVM = fin.transactions.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,15).map(t=>{ const idx=fin.categories.findIndex(c=>c.id===t.catId); const cat=fin.categories[idx]; return { id:t.id, catName: cat?cat.name:'—', date:t.date, amount:t.amount, dotStyle:{width:'8px',height:'8px',borderRadius:'50%',background:PALETTE[idx%PALETTE.length]||'var(--color-neutral-400)',display:'inline-block'}, remove:()=>this.removeListItem(['finances','transactions'],t.id) }; });
+    vals.incomeVM = fin.incomeStreams.map(inc=>({ id:inc.id, name:inc.name, amount:inc.amount, rename:(e)=>this.renameListItem(['finances','incomeStreams'],inc.id,'name',e.target.value), renameAmount:(e)=>this.renameListItem(['finances','incomeStreams'],inc.id,'amount',Number(e.target.value)), remove:()=>this.removeListItem(['finances','incomeStreams'],inc.id) }));
+    vals.incomeTotal = fin.incomeStreams.reduce((a,b)=>a+(Number(b.amount)||0),0);
+    vals.addIncome = ()=>{ const n=document.getElementById('incNameDraft'), a=document.getElementById('incAmountDraft'); if(n.value.trim()){ this.addListItem(['finances','incomeStreams'],{id:U2.uid(),name:n.value.trim(),amount:Number(a.value)||0}); n.value=''; a.value=''; } };
+
+    const barPeriod = fin.barPeriod||'month';
+    vals.barPeriodOptions = ['week','month'].map(p=>({ label:p, active: barPeriod===p, select:()=>this.update(d=>{d.finances.barPeriod=p;}) }));
+    const barDays = barPeriod==='week'?7:30;
+    const barSpendTotal = fin.transactions.filter(t=>t.date>=U2.addDays(today,-barDays)).reduce((a,t)=>a+t.amount,0);
+    const barIncomeTotal = barPeriod==='week' ? Math.round(vals.incomeTotal/4.345) : vals.incomeTotal;
+    const barMax = Math.max(barIncomeTotal,barSpendTotal,1);
+    vals.barIncome = Math.round(barIncomeTotal); vals.barSpending = Math.round(barSpendTotal);
+    vals.incomeBarStyle = { width:'44px', height: Math.max(4,barIncomeTotal/barMax*90)+'px', background:'var(--color-accent-600)' };
+    vals.spendingBarStyle = { width:'44px', height: Math.max(4,barSpendTotal/barMax*90)+'px', background:'var(--color-accent-300)' };
+    const net = barIncomeTotal - barSpendTotal;
+    vals.netLabel = (net>=0?'+$':'-$')+Math.abs(Math.round(net))+' net';
+    vals.netStyle = { fontFamily:'var(--font-heading)', fontSize:'15px', color: net>=0 ? 'var(--color-accent-800)' : '#c96a4f' };
+
+    vals.bodyDay = { weight: bodyDayRaw.weight ?? '', calories: bodyDayRaw.calories ?? '', protein: bodyDayRaw.protein ?? '', gym: !!bodyDayRaw.gym,
+      setWeight:(e)=>this.update(d=>{this.ensureDay(d,viewDate).weight=e.target.value;}), setCalories:(e)=>this.update(d=>{this.ensureDay(d,viewDate).calories=e.target.value;}), setProtein:(e)=>this.update(d=>{this.ensureDay(d,viewDate).protein=e.target.value;}),
+      toggleGym:()=>this.update(d=>{const day=this.ensureDay(d,viewDate); day.gym=!day.gym;}) };
+    const gymHeatmapPct = (key)=>{ const d=data.days[key]; if(!d) return null; return d.gym?100:0; };
+    vals.prEnabled = data.body.prEnabled; vals.togglePr = ()=>this.update(d=>{d.body.prEnabled=!d.body.prEnabled;});
+    vals.programVM = U2.WORKOUT_DAYS.map(dayName=>({ label:dayName, isToday: dayName===wd, highlightStyle: dayName===wd ? 'box-shadow: inset 0 0 0 2px var(--color-accent);' : '',
+      exercises: (data.body.workoutProgram[dayName]||[]).map(ex=>({ name:ex.name, rename:(e)=>this.renameListItem(['body','workoutProgram',dayName],ex.id,'name',e.target.value), remove:()=>this.removeListItem(['body','workoutProgram',dayName],ex.id),
+        sets: ex.sets.map((st,si)=>({ reps:st.reps, weight:st.weight, setReps:(e)=>this.update(d=>{d.body.workoutProgram[dayName].find(x=>x.id===ex.id).sets[si].reps=e.target.value;}), setWeight:(e)=>this.update(d=>{d.body.workoutProgram[dayName].find(x=>x.id===ex.id).sets[si].weight=e.target.value;}), remove:()=>this.update(d=>{d.body.workoutProgram[dayName].find(x=>x.id===ex.id).sets.splice(si,1);}) })),
+        addSet:()=>this.update(d=>{d.body.workoutProgram[dayName].find(x=>x.id===ex.id).sets.push({reps:'',weight:''});}),
+        recordPr:()=>{ const exd = data.body.workoutProgram[dayName].find(x=>x.id===ex.id); const top = exd.sets[exd.sets.length-1]; if(top && top.weight) this.update(d=>{ if(!d.body.prLog[ex.name]) d.body.prLog[ex.name]=[]; d.body.prLog[ex.name].push({date:viewDate, weight:top.weight}); }); } })),
+      addExerciseKey:(e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['body','workoutProgram',dayName],{id:U2.uid(),name:e.target.value.trim(),sets:[{reps:'',weight:''}]}); e.target.value=''; } } }));
+    vals.prVM = Object.keys(data.body.prLog).map(name=>({ name, entries: data.body.prLog[name].slice(-6).map(e=>({date:e.date,weight:e.weight})) }));
+
+    const curOpts = [{key:'', label:'— no linked curriculum —'}];
+    ['stem','bible','civ'].forEach(t=>{ (data.curricula[t]||[]).forEach(c=>curOpts.push({key:t+':'+c.skill_name, label:(t.toUpperCase())+' · '+c.skill_name})); });
+    vals.curriculumOptions = curOpts;
+
+    vals.canResetLayout = !!TAB_BUILTIN_TILES[tabKey]; vals.resetTabLayout = ()=>this.resetTabLayout(tabKey);
+    vals.addFolderTile = ()=>{ const el=document.getElementById('folderNameDraft'); if(el && el.value.trim()){ this.addFolder(el.value.trim()); el.value=''; } };
+    vals.projectFoldersVM = data.projects.map(f=>{
+      const active = f.children.filter(e=>!e.deactivated), deactivated = f.children.filter(e=>e.deactivated);
+      return { id:f.id, name:f.name, count:active.length, deactivatedCount:deactivated.length, active, deactivated,
+        rename:(e)=>this.update(d=>{const ff=d.projects.find(x=>x.id===f.id); if(ff) ff.name=e.target.value;}),
+        remove:()=>this.removeFolder(f.id),
+        entryDraftId:'entryDraft-'+f.id, addEntryKey:(e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addEntry(f.id, e.target.value.trim()); e.target.value=''; } },
+        showDeactivated: this.getUi(f.id,'showDeactivated',false), toggleShowDeactivated: ()=>this.toggleUi(f.id,'showDeactivated',false),
+        entries: active.map(en=>{
+          const curKey = en.linkedCurriculum ? en.linkedCurriculum.tab+':'+en.linkedCurriculum.skillName : '';
+          return { id:en.id, name:en.name, description:en.description, status:en.status, curriculumKey:curKey, showNotion: en.status==='In Progress', notionLink: en.notionLink||'',
+            rename:(e)=>this.update(d=>{ const ff=d.projects.find(x=>x.id===f.id); const ee=ff.children.find(x=>x.id===en.id); ee.name=e.target.value; }),
+            setDescription:(e)=>this.update(d=>{ const ff=d.projects.find(x=>x.id===f.id); const ee=ff.children.find(x=>x.id===en.id); ee.description=e.target.value; }),
+            setStatus:(e)=>this.update(d=>{ const ff=d.projects.find(x=>x.id===f.id); const ee=ff.children.find(x=>x.id===en.id); ee.status=e.target.value; }),
+            setNotion:(e)=>this.update(d=>{ const ff=d.projects.find(x=>x.id===f.id); const ee=ff.children.find(x=>x.id===en.id); ee.notionLink=e.target.value; }),
+            setCurriculum:(e)=>this.update(d=>{ const ff=d.projects.find(x=>x.id===f.id); const ee=ff.children.find(x=>x.id===en.id); const v=e.target.value; ee.linkedCurriculum = v ? {tab:v.split(':')[0], skillName:v.split(':').slice(1).join(':')} : null; }),
+            deactivate:()=>this.update(d=>{ const ff=d.projects.find(x=>x.id===f.id); const ee=ff.children.find(x=>x.id===en.id); ee.deactivated=true; }),
+            remove:()=>this.update(d=>{ const ff=d.projects.find(x=>x.id===f.id); ff.children=ff.children.filter(x=>x.id!==en.id); }) };
+        }) };
+    });
+
+    vals.scratchPad = data.scratchPad||''; vals.setScratchPad=(e)=>this.update(d=>{d.scratchPad=e.target.value;});
+    vals.pickerResult = this.state.pickerResult||'';
+    vals.pickRandom = ()=>{ const el=document.getElementById('pickerListDraft'); if(!el) return; const items=(el.value||'').split('\n').map(s=>s.trim()).filter(Boolean); if(!items.length) return; this.setState({pickerResult: items[Math.floor(Math.random()*items.length)]}); };
+
+    const nowIso = new Date().toISOString();
+    vals.remindersVM = data.reminders.map(r=>({ id:r.id, text:r.text, at:r.at, due: !r.notified && r.at<=nowIso, label: new Date(r.at).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}), remove:()=>this.removeReminder(r.id) }));
+    vals.notifyPermission = typeof Notification!=='undefined' ? Notification.permission : 'unsupported';
+    vals.enableNotifications = ()=>this.requestNotifyPermission();
+    vals.addReminderSubmit = ()=>{ const t=document.getElementById('reminderTextDraft'), a=document.getElementById('reminderAtDraft'); if(t.value.trim() && a.value){ this.addReminder(t.value, new Date(a.value).toISOString()); t.value=''; a.value=''; } };
+
+    vals.darkMode = !!data.settings.darkMode;
+    vals.toggleDarkMode = ()=>this.update(d=>{ d.settings.darkMode=!d.settings.darkMode; });
+    vals.exportData = ()=>{ const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='command-data.json'; a.click(); URL.revokeObjectURL(url); };
+    vals.importData = (e)=>{ const file=e.target.files[0]; if(!file) return; const reader=new FileReader(); reader.onload=()=>{ try{ const obj=this.normalizeData(JSON.parse(reader.result)); this.persist(obj); this.setState({data:obj, activeTab:'dashboard', modalTab:null, modalId:null}); }catch(err){ alert('That file is not valid JSON.'); } }; reader.readAsText(file); };
+    vals.resetAllData = ()=>{ if(window.confirm('Reset all data back to the sample dataset? This cannot be undone.')){ const fresh=this.normalizeData(U2.sampleData()); this.persist(fresh); this.setState({data:fresh, activeTab:'dashboard', modalTab:null, modalId:null}); } };
+    vals.deleteSampleData = ()=>{ if(window.confirm('Delete all data and start blank? This cannot be undone.')){ const fresh=this.normalizeData(U2.blankData()); this.persist(fresh); this.setState({data:fresh, activeTab:'dashboard', modalTab:null, modalId:null}); } };
+
+    vals.customTabsVM = data.customTabs.map(t=>({ id:t.id, label:t.label, rename:(e)=>this.update(d=>{ const ct=d.customTabs.find(x=>x.id===t.id); if(ct) ct.label=e.target.value; }),
+      remove:()=>{ const wasActive=this.state.activeTab===t.id; this.update(d=>{ d.customTabs=d.customTabs.filter(x=>x.id!==t.id); delete d.tiles[t.id]; }); if(wasActive) this.setTab('dashboard'); } }));
+    vals.addCustomTab = ()=>{ const el=document.getElementById('newTabNameDraft'); if(el && el.value.trim()){ this.update(d=>{ const id='ct-'+U2.uid(); d.customTabs.push({id,label:el.value.trim()}); d.tiles[id]=[]; }); el.value=''; } };
+    vals.builtinTabsVM = Object.keys(BUILTIN_TAB_LABELS).map(key=>({ key, label: data.tabLabelOverrides[key]||BUILTIN_TAB_LABELS[key], visible: !data.hiddenTabs.includes(key),
+      rename:(e)=>this.update(d=>{ d.tabLabelOverrides[key]=e.target.value; }),
+      toggle:()=>this.update(d=>{ const i=d.hiddenTabs.indexOf(key); if(i>=0) d.hiddenTabs.splice(i,1); else d.hiddenTabs.push(key); }) }));
+
+    const hiddenTilesList = [];
+    Object.keys(data.tiles||{}).forEach(tk=>{
+      (data.tiles[tk]||[]).forEach(t=>{
+        if(t.hidden && t.kind==='builtin'){
+          hiddenTilesList.push({ tabLabel: data.tabLabelOverrides[tk]||BUILTIN_TAB_LABELS[tk]||tk, title: TILE_TITLES[t.id]||t.id, restore:()=>this.restoreTile(tk,t.id) });
+        }
+      });
+    });
+    vals.hiddenTilesVM = hiddenTilesList; vals.hasHiddenTiles = hiddenTilesList.length>0;
+
+    vals.rootStyle = Object.assign({minHeight:'100vh',background:'var(--color-bg)',color:'var(--color-text)',fontFamily:'var(--font-body)',paddingBottom:'calc(env(safe-area-inset-bottom) + 24px)'},
+      vals.darkMode ? {'--color-bg':'var(--color-neutral-900)','--color-surface':'var(--color-neutral-800)','--color-text':'var(--color-neutral-100)','--color-divider':'var(--color-neutral-500)'} : {});
+
+    const addBlockOfType = (type)=>{ if(type==='chart') this.addChartTile(tabKey); else if(type==='json') this.addJsonTile(tabKey); else this.addMirrorTile(tabKey,type); this.setState({addBlockMenuOpen:false}); };
+    vals.blockTypeOptions = [
+      {key:'chart',label:'Chart (bar/line/pie)'},{key:'json',label:'JSON data'},{key:'habitGraph',label:'Habit graph'},{key:'heatmap',label:'Consistency heatmap'},
+      {key:'counters',label:'Counters'},{key:'bibleProgress',label:'Bible progress'},{key:'financePie',label:'Spending pie'},{key:'financeBar',label:'Income vs spend'}
+    ].map(o=>({...o, select:()=>addBlockOfType(o.key)}));
+    vals.addBlockMenuOpen = this.state.addBlockMenuOpen; vals.toggleAddBlockMenu = ()=>this.setState(s=>({addBlockMenuOpen:!s.addBlockMenuOpen}));
+    vals.addStickyYellow = ()=>this.addStickyTile(tabKey,'#f4e07a'); vals.addStickyBlue = ()=>this.addStickyTile(tabKey,'#a9c9e8'); vals.addStickyRed = ()=>this.addStickyTile(tabKey,'#e3a1a1'); vals.addStickyGreen = ()=>this.addStickyTile(tabKey,'#a3d9a5');
+
+    const pom = this.state.pomodoro;
+    const mm = Math.floor(pom.secondsLeft/60), ss = pom.secondsLeft%60;
+    vals.pomodoroClock = U2.pad(mm)+':'+U2.pad(ss); vals.pomodoroModeLabel = pom.mode==='work'?'Focus':'Break'; vals.pomodoroCycles = pom.cycles;
+    vals.pomodoroToggleLabel = pom.running?'Pause':'Start'; vals.pomodoroToggle = ()=> pom.running ? this.pomodoroPause() : this.pomodoroStart();
+    vals.pomodoroReset = ()=>this.pomodoroReset();
+
+    // — curriculum card, full detail (used inside the "Curricula" tile's popup) —
+    const renderCurriculumCard = (card)=> E('div',{key:card.id, style:{border:'1px solid var(--color-divider)',borderRadius:'12px',padding:'14px',marginBottom:'12px'}},
+      E('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}, onClick:card.toggle},
+        E('div',{style:{display:'flex',alignItems:'center',gap:'10px'}}, E('h4',{style:{margin:0}}, card.name), E('span',{className:'tag tag-neutral'}, card.type)),
+        E('div',{style:{display:'flex',alignItems:'center',gap:'10px'}},
+          card.pct===null ? E('span',{className:'tag tag-accent'},'Active practice') : E('span',{style:{fontSize:'12px'}}, card.pct+'%'),
+          E('span',{className:'cmd-sec-icon'}, card.icon))),
+      card.pct!==null ? E('div',{style:{height:'8px',background:'var(--color-neutral-200)',borderRadius:'4px',marginTop:'6px',maxWidth:'260px',overflow:'hidden'}}, E('div',{style:{height:'100%',width:card.pct+'%',background:'var(--color-accent-600)'}})) : null,
+      !card.open ? null : E('div',{style:{marginTop:'12px',display:'flex',flexDirection:'column',gap:'10px'}},
+        E('div',null, E('h6',null,'Overview flow'), card.overviewEl),
+        E('div',null, E('h6',null,'Intro & goals'), E('div',{style:{fontSize:'13px'}}, E('p',null,card.intro), E('p',{className:'text-muted'},card.why), E('ul',null, card.goals.map((g,i)=>E('li',{key:i},g))), E('p',null, E('b',null,'Mastery: '), card.mastery))),
+        E('div',null, E('h6',null,'Modules, skill tree & progress'), card.modules.map((m,mi)=>E('div',{key:mi,style:{marginTop:'10px',paddingTop:'10px',borderTop:'1px solid var(--color-divider)'}},
+          E('h6',null,'Module '+(mi+1)+' — '+m.title), E('p',{className:'text-muted',style:{fontSize:'12px'}},m.description),
+          E('div',{style:{overflowX:'auto',padding:'8px 0'}}, m.treeEl),
+          m.lessons.length ? E('div',{style:{fontSize:'13px'}}, E('b',null,'Lessons: '), m.lessons.map(l=>l.title).join(', ')) : null,
+          m.drills.map((d,di)=>E('label',{key:di,style:{display:'flex',gap:'8px',fontSize:'13px',margin:'4px 0'}}, E('input',{type:'checkbox',className:'cmd-chk',checked:d.done,onChange:d.toggle}), d.title)),
+          m.projects.map((p,pi)=>E('label',{key:pi,style:{display:'flex',gap:'8px',fontSize:'13px',margin:'4px 0'}}, E('input',{type:'checkbox',className:'cmd-chk',checked:p.done,onChange:p.toggle}), p.title+' ('+p.unlocks+')'))
+        ))),
+        E('div',null, E('h6',null,'Resources'),
+          E('ul',{style:{fontSize:'13px'}}, card.resources.map((r,i)=>E('li',{key:i}, r.title+(r.cost?' ('+r.cost+')':'')))),
+          E('div',{style:{display:'flex',gap:'6px',marginTop:'6px'}},
+            E('input',{className:'input',id:'curres-title-'+card.id,placeholder:'Title',style:{fontSize:'12px'}}),
+            E('input',{className:'input',id:'curres-url-'+card.id,placeholder:'URL',style:{fontSize:'12px'}}),
+            E('button',{className:'btn btn-secondary',onClick:card.addResource},'Add'))),
+        E('div',null, E('h6',null,'Notes'), E('textarea',{className:'input',defaultValue:card.notes,onBlur:card.setNotes})),
+        E('div',{style:{display:'flex',gap:'8px'}}, E('button',{className:'btn btn-secondary',onClick:card.deactivate},'Deactivate'), E('button',{className:'btn btn-secondary',onClick:card.remove},'Remove'))
+      )
+    );
+
+    // — the tile-content dispatcher: one place mapping a builtin tile id to its
+    //   {condensed, full} React content. Condensed is always short enough to fit its
+    //   box by construction; full is the complete, previously-existing editor/view,
+    //   rendered inside the shared modal so nothing is ever clipped.
+    const shortList = (items,n,render)=> E('div',null, items.slice(0,n).map(render), items.length>n ? E('div',{style:{fontSize:11,color:'var(--color-accent-700)',marginTop:2}}, '+'+(items.length-n)+' more') : null);
+    const rowLine = (key,label,done)=> E('div',{key,style:{fontSize:12,padding:'2px 0',display:'flex',gap:6,alignItems:'center'}}, E('span',{style:{opacity:done?0.5:1,textDecoration:done?'line-through':'none',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},label));
+
+    const buildBuiltinTileContent = (id, size)=>{
+      switch(id){
+        case 'dTodo': {
+          const items = vals.dailyRecurringVM.concat(vals.adHocVM);
+          const doneN = items.filter(i=>i.done).length;
+          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--color-accent-800)',marginBottom:4}}, doneN+'/'+items.length+' done'),
+              shortList(items,3,it=>rowLine(it.id,it.text,it.done))),
+            full: E('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}},
+              E('div',null, E('h6',{className:'text-muted',style:{marginBottom:8}},'Daily recurring'),
+                vals.dailyRecurringVM.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}},
+                  E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,onChange:it.toggle}), E('input',{className:'cmd-txt',defaultValue:it.text,onBlur:it.rename}), E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
+                E('input',{className:'input',style:{marginTop:8},placeholder:'Add recurring task, press Enter',onKeyDown:vals.addDailyRecurringKey})),
+              E('div',null, E('h6',{className:'text-muted',style:{marginBottom:8}},'Ad hoc'),
+                vals.adHocVM.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',flexWrap:'wrap'}},
+                  E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,onChange:it.toggle}), E('input',{className:'cmd-txt',style:{flex:1,minWidth:100},defaultValue:it.text,onBlur:it.rename}),
+                  E('input',{className:'input',style:{width:140,fontSize:12},type:'date',defaultValue:it.deadline,onChange:it.setDeadline}), E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
+                E('input',{className:'input',style:{marginTop:8},placeholder:'Add ad hoc item, press Enter',onKeyDown:vals.addAdHocKey}))) };
+        }
+        case 'dWeekdayChunks': {
+          const todayWc = vals.weekdayChunksVM.find(w=>!w.notToday);
+          const doneN = todayWc.items.filter(i=>i.done).length;
+          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--color-accent-800)',marginBottom:4}}, todayWc.label+' — '+doneN+'/'+todayWc.items.length),
+              shortList(todayWc.items,3,it=>rowLine(it.id,it.text,it.done))),
+            full: E('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:12}},
+              vals.weekdayChunksVM.map(wc=>E('div',{key:wc.label,style:{border:'1px solid var(--color-divider)',borderRadius:'8px',padding:8,...(wc.notToday?{}:{boxShadow:'inset 0 0 0 2px var(--color-accent)'})}},
+                E('h6',null,wc.label),
+                wc.items.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:6,padding:'3px 0'}},
+                  E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,disabled:wc.notToday,onChange:it.toggle}), E('input',{className:'cmd-txt',style:{fontSize:12},defaultValue:it.text,onBlur:it.rename}), E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
+                E('input',{className:'input',style:{marginTop:6,fontSize:12},placeholder:'Add…',onKeyDown:wc.addKey})))) };
+        }
+        case 'dWeekly': {
+          const doneN = vals.weeklyVM.filter(w=>w.doneToday && !w.notToday).length;
+          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--color-accent-800)',marginBottom:4}}, doneN+'/'+vals.weeklyVM.filter(w=>!w.notToday).length+' today'),
+              shortList(vals.weeklyVM,3,wt=>rowLine(wt.id,wt.text+' ('+wt.dayChips.filter(d=>d.style.background!=='transparent').map(d=>d.label).join(',')+')',wt.doneToday))),
+            full: E('div',null, vals.weeklyVM.map(wt=>E('div',{key:wt.id,style:{padding:'8px 0',borderBottom:'1px solid var(--color-divider)'}},
+              E('div',{style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+                E('input',{type:'checkbox',className:'cmd-chk',checked:wt.doneToday,disabled:wt.notToday,onChange:wt.toggle}), E('input',{className:'cmd-txt',style:{maxWidth:160},defaultValue:wt.text,onBlur:wt.rename}),
+                E('div',{style:{display:'flex',gap:4}}, wt.dayChips.map(dc=>E('button',{key:dc.label,className:'tag',style:dc.style,onClick:dc.toggle},dc.label))),
+                E('button',{className:'btn btn-ghost',style:{fontSize:11},onClick:wt.toggleExpand},wt.expandLabel),
+                E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:wt.remove},'×')),
+              wt.expanded ? E('textarea',{className:'input',style:{marginTop:6,fontSize:12},placeholder:'Notes / detail for this task…',defaultValue:wt.notes,onBlur:wt.setNotes}) : null)),
+              E('input',{className:'input',style:{marginTop:8},placeholder:'Add weekly task, press Enter',onKeyDown:vals.addWeeklyKey})) };
+        }
+        case 'dChunks': {
+          return { condensed: E('div',null, vals.chunksVM.map(c=>E('div',{key:c.name,style:{fontSize:12,padding:'2px 0',display:'flex',justifyContent:'space-between'}}, E('span',null,c.name), E('span',{className:'text-muted'}, c.items.filter(i=>i.done).length+'/'+c.items.length)))),
+            full: E('div',{style:{display:'flex',flexDirection:'column',gap:12}}, vals.chunksVM.map(chunk=>E('div',{key:chunk.name,style:{border:'1px solid var(--color-divider)',borderRadius:'8px',padding:10}},
+              E('h6',{style:{marginBottom:8}},chunk.name),
+              chunk.items.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:6,padding:'3px 0'}},
+                E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,onChange:it.toggle}), E('input',{className:'cmd-txt',style:{fontSize:13},defaultValue:it.text,onBlur:it.rename}), E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
+              E('input',{className:'input',style:{marginTop:6,fontSize:12},placeholder:'Add…',onKeyDown:chunk.addKey})))) };
+        }
+        case 'dCounters': {
+          return { condensed: shortList(vals.countersVM,3,c=>E('div',{key:c.id,style:{fontSize:12,marginBottom:4}}, E('div',{style:{display:'flex',justifyContent:'space-between'}}, E('span',null,c.name), E('span',{className:'text-muted'}, c.value+'/'+c.goal)),
+              E('div',{style:{height:4,background:'var(--color-neutral-200)',borderRadius:2,overflow:'hidden',marginTop:2}}, E('div',{style:c.barStyle})))),
+            full: E('div',{style:{display:'flex',gap:16,flexWrap:'wrap'}},
+              E('div',{style:{flex:2,minWidth:200,display:'flex',flexDirection:'column',gap:8}}, vals.countersVM.map(c=>E('div',{key:c.id,style:{border:'1px solid var(--color-divider)',borderRadius:10,padding:'8px 10px'}},
+                E('div',{style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+                  E('input',{className:'cmd-txt',style:{fontWeight:600,maxWidth:110},defaultValue:c.name,onBlur:c.rename}),
+                  E('button',{className:'btn btn-secondary btn-icon',onClick:c.dec},'−'), E('input',{className:'cmd-num',type:'number',step:c.step,defaultValue:c.value,onBlur:c.setValue}), E('button',{className:'btn btn-secondary btn-icon',onClick:c.inc},'+'),
+                  E('span',{className:'text-muted',style:{fontSize:12}}, '/ '+c.goal+' '+c.unit),
+                  E('button',{className:'cmd-sec-icon',style:{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',...c.iconStyle},onClick:c.toggleOpen},'▾')),
+                E('div',{style:{height:6,background:'var(--color-neutral-200)',borderRadius:3,overflow:'hidden',marginTop:8}}, E('div',{style:c.barStyle})),
+                c.open ? E('div',{style:{display:'flex',gap:6,flexWrap:'wrap',marginTop:8,alignItems:'center'}},
+                  E('input',{className:'cmd-txt',style:{maxWidth:80},placeholder:'unit',defaultValue:c.unit,onBlur:c.setUnit}), E('span',{className:'text-muted',style:{fontSize:12}},'goal'),
+                  E('input',{className:'cmd-num',type:'number',step:c.step,defaultValue:c.goal,onBlur:c.setGoal}),
+                  E('label',{style:{fontSize:11,display:'flex',gap:4,alignItems:'center'}}, E('input',{type:'checkbox',className:'cmd-chk',style:{width:14,height:14},checked:c.decimals,onChange:c.toggleDecimals}),'decimal'),
+                  E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:c.remove},'×')) : null))),
+              E('div',{style:{flex:1,minWidth:150,borderLeft:'1px solid var(--color-divider)',paddingLeft:12}},
+                E('h6',{style:{margin:'0 0 8px'}},'Add counter'),
+                E('div',{style:{display:'flex',flexDirection:'column',gap:6}},
+                  E('input',{className:'input',id:'counterNameDraft',placeholder:'Name'}), E('input',{className:'input',id:'counterUnitDraft',placeholder:'unit'}), E('input',{className:'input',id:'counterGoalDraft',type:'number',placeholder:'goal'}),
+                  E('button',{className:'btn btn-secondary',onClick:vals.addCounter},'Add')))) };
+        }
+        case 'dHabits': {
+          return { condensed: shortList(vals.habitsVM,3,h=>E('div',{key:h.id,style:{fontSize:12,display:'flex',justifyContent:'space-between',padding:'2px 0'}}, E('span',null,h.name), E('span',{className:'tag tag-neutral',style:{fontSize:10}},h.todayValue))),
+            full: E('div',null, vals.habitsVM.map(h=>E('div',{key:h.id,style:{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'1px solid var(--color-divider)',flexWrap:'wrap'}},
+                E('input',{className:'cmd-txt',style:{width:140,flex:'none'},defaultValue:h.name,onBlur:h.rename}), E('span',{className:'tag tag-neutral',style:{flex:'none'}},h.direction),
+                E('button',{className:'btn btn-secondary btn-icon',onClick:h.dec},'−'), E('input',{className:'cmd-num',type:'number',defaultValue:h.todayValue,onBlur:h.setValue}), E('button',{className:'btn btn-secondary btn-icon',onClick:h.inc},'+'),
+                E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:h.remove},'×'))),
+              E('div',{style:{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}},
+                E('input',{className:'input',id:'habitNameDraft',placeholder:'Habit name'}),
+                E('select',{className:'input',style:{width:'auto'},id:'habitDirDraft'}, E('option',{value:'increase'},'increase goal'), E('option',{value:'decrease'},'decrease goal')),
+                E('button',{className:'btn btn-secondary',onClick:vals.addHabit},'Add'))) };
+        }
+        case 'dHabitGraph': {
+          const condH = SIZE_CHART_H[size]||SIZE_CHART_H.wide;
+          const hiddenIds = data.habits.filter(h=>this.getUi('habitVis-'+h.id,'hidden',false)).map(h=>h.id);
+          return { condensed: this.buildHabitGraph(data,condH+'px', condH>=SIZE_CHART_H.large, hiddenIds),
+            full: E('div',null,
+              E('div',{style:{display:'flex',gap:16,flexWrap:'wrap',alignItems:'flex-start'}},
+                E('div',{style:{flex:'2 1 260px',minWidth:0}}, this.buildHabitGraph(data,'190px',true,hiddenIds)),
+                E('div',{style:{flex:'1 1 120px',minWidth:110}},
+                  E('h6',{className:'text-muted',style:{margin:'0 0 6px',fontSize:11}},'Show'),
+                  data.habits.map((h,idx)=>E('label',{key:h.id,style:{display:'flex',alignItems:'center',gap:6,fontSize:12,padding:'3px 0',cursor:'pointer'}},
+                    E('input',{type:'checkbox',className:'cmd-chk',style:{width:14,height:14},checked:!hiddenIds.includes(h.id),onChange:()=>this.toggleUi('habitVis-'+h.id,'hidden',false)}),
+                    E('span',{style:{width:10,height:10,borderRadius:2,background:HABIT_COLORS[idx%HABIT_COLORS.length],display:'inline-block',flex:'none'}}),
+                    h.name)))),
+              E('button',{className:'btn btn-ghost',style:{paddingLeft:0,marginTop:6},onClick:vals.toggleHabitDetail},vals.habitDetailLabel),
+              vals.habitDetailOpen ? E('div',{style:{overflow:'auto',maxHeight:220,border:'1px solid var(--color-divider)',borderRadius:8,marginTop:6}},
+                E('table',{className:'table',style:{fontSize:12}}, E('thead',null,E('tr',null,E('th',null,'Date'),vals.habitNames.map((hn,i)=>E('th',{key:i},hn.name)))),
+                  E('tbody',null, vals.habitDetailRows.map((row,ri)=>E('tr',{key:ri},E('td',null,row.date),row.cells.map((cell,ci)=>E('td',{key:ci},cell.value))))))) : null) };
+        }
+        case 'dHeatmap': {
+          return { condensed: this.buildHeatmapRecent(dailyHeatmapPct, 7),
+            full: E('div',null, E('p',{className:'text-muted',style:{fontSize:11,marginBottom:8}},'Last 6 months — scroll for more'), this.buildHeatmapHistory(dailyHeatmapPct, 6)) };
+        }
+        case 'fBar': {
+          const barsEl = (h)=> E('div',{style:{display:'flex',alignItems:'flex-end',gap:20,height:h,marginTop:8}},
+            E('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:4,height:'100%',justifyContent:'flex-end'}}, E('span',{style:{fontSize:11}},'$'+vals.barIncome), E('div',{style:vals.incomeBarStyle}), E('span',{className:'text-muted',style:{fontSize:10}},'Income')),
+            E('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:4,height:'100%',justifyContent:'flex-end'}}, E('span',{style:{fontSize:11}},'$'+vals.barSpending), E('div',{style:vals.spendingBarStyle}), E('span',{className:'text-muted',style:{fontSize:10}},'Spending')));
+          return { condensed: E('div',null, barsEl('70px'), E('p',{style:vals.netStyle},vals.netLabel)),
+            full: E('div',null, E('div',{className:'seg',style:{margin:'8px 0'}}, vals.barPeriodOptions.map(p=>E('label',{key:p.label,className:'seg-opt'}, E('input',{type:'radio',name:'barperiod',checked:p.active,onChange:p.select}), E('span',{className:'dot'}), p.label))),
+              barsEl('100px'), E('p',{style:vals.netStyle},vals.netLabel)) };
+        }
+        case 'fPie': {
+          return { condensed: E('div',{style:{display:'flex',gap:10,alignItems:'center'}}, E('div',{style:{...vals.pieStyle,width:60,height:60}}),
+              E('div',null, shortList(vals.categoryVM,3,c=>E('div',{key:c.id,style:{display:'flex',alignItems:'center',gap:6,fontSize:11}}, E('span',{style:c.dotStyle}), c.name)))),
+            full: E('div',null, E('div',{className:'seg',style:{margin:'8px 0'}}, vals.periodOptions.map(p=>E('label',{key:p.label,className:'seg-opt'}, E('input',{type:'radio',name:'period',checked:p.active,onChange:p.select}), E('span',{className:'dot'}), p.label))),
+              E('div',{style:{display:'flex',gap:16,flexWrap:'wrap',alignItems:'center'}}, E('div',{style:vals.pieStyle}),
+                E('div',{style:{minWidth:180}}, vals.categoryVM.map(c=>E('div',{key:c.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}},
+                  E('span',{style:c.dotStyle}), E('input',{className:'cmd-txt',style:{maxWidth:100},defaultValue:c.name,onBlur:c.rename}), E('span',{className:'text-muted',style:{fontSize:12,marginLeft:'auto'}},'$'+c.total), E('button',{className:'cmd-x-btn',onClick:c.remove},'×'))),
+                  E('div',{style:{display:'flex',gap:6,marginTop:8}}, E('input',{className:'input',id:'catNameDraft',placeholder:'New category'}), E('button',{className:'btn btn-secondary',onClick:vals.addCategory},'Add')))),
+              E('h6',{className:'text-muted',style:{marginTop:14}},'Log a transaction'),
+              E('div',{style:{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}},
+                E('select',{className:'input',style:{width:'auto'},id:'txCatDraft'}, vals.categoryOptions.map(c=>E('option',{key:c.id,value:c.id},c.name))),
+                E('input',{className:'input',style:{width:120},id:'txAmountDraft',type:'number',placeholder:'Amount'}), E('input',{className:'input',style:{width:150},id:'txDateDraft',type:'date'}),
+                E('button',{className:'btn btn-secondary',onClick:vals.addTransaction},'Add')),
+              vals.transactionsVM.map(tr=>E('div',{key:tr.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:'1px solid var(--color-divider)',fontSize:13}},
+                E('span',{style:tr.dotStyle}), E('span',null,tr.catName), E('span',{className:'text-muted'},tr.date), E('b',{style:{marginLeft:'auto'}},'$'+tr.amount), E('button',{className:'cmd-x-btn',onClick:tr.remove},'×')))) };
+        }
+        case 'fIncome': {
+          return { condensed: E('div',null, shortList(vals.incomeVM,3,inc=>E('div',{key:inc.id,style:{fontSize:12,display:'flex',justifyContent:'space-between'}}, E('span',null,inc.name), E('span',null,'$'+inc.amount))),
+              E('div',{style:{fontSize:12,fontWeight:600,marginTop:4}},'Total: $'+vals.incomeTotal)),
+            full: E('div',null, vals.incomeVM.map(inc=>E('div',{key:inc.id,style:{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid var(--color-divider)'}},
+                E('input',{className:'cmd-txt',style:{maxWidth:150},defaultValue:inc.name,onBlur:inc.rename}), E('input',{className:'cmd-txt',style:{maxWidth:90},type:'number',defaultValue:inc.amount,onBlur:inc.renameAmount}), E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:inc.remove},'×'))),
+              E('div',{style:{display:'flex',justifyContent:'space-between',paddingTop:8}}, E('b',null,'Total monthly'), E('b',null,'$'+vals.incomeTotal)),
+              E('div',{style:{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}}, E('input',{className:'input',id:'incNameDraft',placeholder:'Stream name'}), E('input',{className:'input',style:{width:110},id:'incAmountDraft',type:'number',placeholder:'Amount'}), E('button',{className:'btn btn-secondary',onClick:vals.addIncome},'Add'))) };
+        }
+        case 'dayDevotion': {
+          const met = devoMetCount(todayDevo);
+          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--color-accent-800)'}}, met+'/10 today'),
+              todayDevo.memoryVerse ? E('div',{style:{fontSize:11,color:'var(--color-accent-700)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, todayDevo.memoryVerse) : null),
+            full: E('div',null,
+              E('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',maxWidth:280}},
+                E('button',{className:'btn btn-ghost',onClick:vals.viewDatePrev},'‹'), E('b',{style:{fontFamily:'var(--font-heading)'}},vals.viewDateLabel), E('button',{className:'btn btn-ghost',onClick:vals.viewDateToday},'Today'), E('button',{className:'btn btn-ghost',onClick:vals.viewDateNext},'›')),
+              E('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginTop:8}},
+                E('div',{className:'field'}, E('label',null,'Memory verse'), E('input',{className:'input',defaultValue:vals.devo.memoryVerse,onBlur:vals.devo.setMemoryVerse})),
+                E('div',{className:'field'}, E('label',{style:{display:'flex',alignItems:'center',gap:8}}, E('input',{type:'checkbox',className:'cmd-chk',checked:vals.devo.prayer5,onChange:vals.devo.togglePrayer5}),'5-minute prayer')),
+                E('div',{className:'field',style:{gridColumn:'1/-1'}}, E('label',null,'Prayer of the day'), E('textarea',{className:'input',defaultValue:vals.devo.prayerOfDay,onBlur:vals.devo.setPrayerOfDay})),
+                E('div',{className:'field',style:{gridColumn:'1/-1'}}, E('label',null,'One new idea from Scripture'), E('textarea',{className:'input',defaultValue:vals.devo.newIdea,onBlur:vals.devo.setNewIdea})),
+                E('div',null, E('label',{className:'text-muted',style:{fontSize:12}},'Prayer requests (3)'), vals.devo.reqEl),
+                E('div',null, E('label',{className:'text-muted',style:{fontSize:12}},'Thankful for (3)'), vals.devo.thankEl)),
+              E('div',{style:{marginTop:14,paddingTop:12,borderTop:'1px solid var(--color-divider)'}}, E('h6',{style:{marginBottom:8}},'Chapters read today'),
+                E('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:10}}, vals.devo.chapterInputs.map(ci=>E('div',{key:ci.key,className:'field'},
+                  E('label',null,ci.label), E('input',{className:'cmd-num',style:{width:'100%'},type:'number',min:0,defaultValue:ci.value,onBlur:ci.setValue}))))),
+              E('div',{style:{marginTop:14}}, E('h6',null,'Devotion consistency'), this.buildHeatmapHistory((key)=>{ const d=data.days[key]; if(!d) return null; return devoMetCount(d.devotion)/10*100; }, 4))) };
+        }
+        case 'dayBible': {
+          return { condensed: E('div',null, vals.bibleCatVM.map(c=>E('div',{key:c.key,style:{marginBottom:6}},
+              E('div',{style:{display:'flex',justifyContent:'space-between',fontSize:11}}, E('span',null,c.label), E('span',{className:'text-muted'},c.value+'/'+c.target)),
+              E('div',{className:'cmd-progress-track',style:{height:5,marginTop:2}}, E('div',{className:'cmd-progress-fill',style:c.barStyle}))))),
+            full: E('div',null,
+              vals.bibleCatVM.map(c=>E('div',{key:c.key,style:{marginBottom:12}},
+                E('div',{style:{display:'flex',justifyContent:'space-between',fontSize:13}}, E('b',null,c.label), E('span',{className:'text-muted'}, c.value+' / '+c.target+' chapters ('+c.pct+'%)')),
+                E('div',{className:'cmd-progress-track',style:{height:8,marginTop:4}}, E('div',{className:'cmd-progress-fill',style:c.barStyle})))),
+              E('button',{className:'btn btn-secondary',style:{marginTop:6},onClick:vals.resetBibleProgress},'Reset Bible progress')) };
+        }
+        case 'dayJournal': {
+          return { condensed: vals.journalVM.length ? E('div',null, E('div',{style:{fontSize:11,color:'var(--color-accent-800)'}},vals.journalVM[0].dateLabel), E('p',{style:{fontSize:12,margin:'2px 0 0',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical'}},vals.journalVM[0].text), vals.journalVM.length>1?E('div',{style:{fontSize:11,color:'var(--color-accent-700)'}},'+'+(vals.journalVM.length-1)+' more entries'):null) : E('p',{className:'text-muted',style:{fontSize:12}},'No entries yet.'),
+            full: E('div',null, E('textarea',{className:'input',style:{marginTop:4},placeholder:'Write an entry… (entries before 6am log to the previous day)',id:'journalDraft'}),
+              E('button',{className:'btn btn-secondary btn-block',onClick:vals.addJournal},'Add entry'),
+              vals.journalVM.map(j=>E('div',{key:j.id,style:{borderTop:'1px solid var(--color-divider)',padding:'8px 0'}},
+                E('div',{style:{display:'flex',justifyContent:'space-between'}}, E('b',{style:{fontSize:12,color:'var(--color-accent-800)'}},j.dateLabel), E('button',{className:'cmd-x-btn',onClick:j.remove},'×')),
+                E('p',{style:{margin:'4px 0 0',fontSize:14}},j.text)))) };
+        }
+        case 'dayBooks': {
+          const counts = {'to-read':0,reading:0,done:0}; vals.booksVM.forEach(b=>{ counts[b.status]=(counts[b.status]||0)+1; });
+          return { condensed: E('div',{style:{fontSize:12,display:'flex',gap:8,flexWrap:'wrap'}}, Object.keys(counts).map(k=>E('span',{key:k,className:'tag tag-neutral',style:{fontSize:10}},counts[k]+' '+k))),
+            full: E('div',null, vals.booksVM.map(b=>E('div',{key:b.id,style:{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid var(--color-divider)'}},
+                E('input',{className:'cmd-txt',style:{maxWidth:220,fontWeight:600},defaultValue:b.title,onBlur:b.renameTitle}), E('input',{className:'cmd-txt',style:{maxWidth:180},defaultValue:b.author,onBlur:b.renameAuthor}),
+                E('select',{className:'input',style:{width:'auto'},defaultValue:b.status,onChange:b.setStatus}, E('option',{value:'to-read'},'to read'),E('option',{value:'reading'},'reading'),E('option',{value:'done'},'done')),
+                E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:b.remove},'×'))),
+              E('div',{style:{display:'flex',gap:6,marginTop:8}}, E('input',{className:'input',id:'bookTitleDraft',placeholder:'Title'}), E('input',{className:'input',id:'bookAuthorDraft',placeholder:'Author'}), E('button',{className:'btn btn-secondary',onClick:vals.addBook},'Add'))) };
+        }
+      }
+      return null;
+    };
+
+    const buildBodyBuiltin = (id, size)=>{
+      switch(id){
+        case 'bTrackers': {
+          const waterC = vals.countersVM.find(c=>c.id==='water');
+          return { condensed: E('div',{style:{fontSize:12,display:'flex',flexDirection:'column',gap:2}},
+              E('div',null,'Weight: '+(vals.bodyDay.weight||'—')), E('div',null,'Calories: '+(vals.bodyDay.calories||'—')),
+              waterC ? E('div',null,'Water: '+waterC.value+'/'+waterC.goal) : null),
+            full: E('div',null,
+              E('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',maxWidth:260}}, E('button',{className:'btn btn-ghost',onClick:vals.viewDatePrev},'‹'), E('b',{style:{fontFamily:'var(--font-heading)'}},vals.viewDateLabel), E('button',{className:'btn btn-ghost',onClick:vals.viewDateNext},'›')),
+              E('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:12,marginTop:8}},
+                E('div',{className:'field'},E('label',null,'Weight (lb)'),E('input',{className:'input',type:'number',defaultValue:vals.bodyDay.weight,onBlur:vals.bodyDay.setWeight})),
+                E('div',{className:'field'},E('label',null,'Calories'),E('input',{className:'input',type:'number',defaultValue:vals.bodyDay.calories,onBlur:vals.bodyDay.setCalories})),
+                E('div',{className:'field'},E('label',null,'Protein (g)'),E('input',{className:'input',type:'number',defaultValue:vals.bodyDay.protein,onBlur:vals.bodyDay.setProtein}))),
+              E('div',{style:{marginTop:12,paddingTop:12,borderTop:'1px solid var(--color-divider)'}}, E('h6',{className:'text-muted',style:{marginBottom:6}},'Weight · calories · water — last 30 days'),
+                E('div',{style:{overflowX:'auto'}}, this.buildBodyTrend(data,'110px'))),
+              E('p',{className:'text-muted',style:{fontSize:12,marginTop:10}},'Water and other counters are managed once in the Counters tile and shown everywhere the same.'),
+              vals.countersVM.map(c=>E('div',{key:c.id,style:{display:'flex',alignItems:'center',gap:8,marginTop:4}},
+                E('span',{style:{fontSize:13,minWidth:60}},c.name), E('button',{className:'btn btn-secondary btn-icon',onClick:c.dec},'−'), E('input',{className:'cmd-num',type:'number',step:c.step,defaultValue:c.value,onBlur:c.setValue}), E('button',{className:'btn btn-secondary btn-icon',onClick:c.inc},'+'),
+                E('span',{className:'text-muted',style:{fontSize:12}},'/ '+c.goal+' '+c.unit)))) };
+        }
+        case 'bGym': {
+          return { condensed: E('div',null, E('label',{style:{display:'flex',alignItems:'center',gap:6,fontSize:12,cursor:'pointer'}}, E('input',{type:'checkbox',className:'cmd-chk',style:{width:14,height:14},checked:vals.bodyDay.gym,onChange:vals.bodyDay.toggleGym}),'Gym today'),
+              this.buildHeatmapRecent(gymHeatmapPct, 7)),
+            full: E('div',null, E('label',{style:{display:'flex',alignItems:'center',gap:8,margin:'8px 0',cursor:'pointer'}}, E('input',{type:'checkbox',className:'cmd-chk',checked:vals.bodyDay.gym,onChange:vals.bodyDay.toggleGym}),'Went to the gym on '+vals.viewDateLabel),
+              E('p',{className:'text-muted',style:{fontSize:11,marginBottom:8}},'Last 6 months — scroll for more'), this.buildHeatmapHistory(gymHeatmapPct, 6)) };
+        }
+        case 'bProgram': {
+          const todayProg = vals.programVM.find(p=>p.isToday) || vals.programVM[0];
+          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--color-accent-800)',marginBottom:4}},todayProg.label),
+              shortList(todayProg.exercises,4,ex=>E('div',{key:ex.name,style:{fontSize:12,padding:'2px 0'}},ex.name))),
+            full: E('div',null, E('p',{className:'text-muted',style:{fontSize:12}},'This doubles as your session log — edit sets/reps/weight as you go.'),
+              E('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))',gap:12}}, vals.programVM.map(day=>E('div',{key:day.label,style:{border:'1px solid var(--color-divider)',borderRadius:8,padding:8,...(day.isToday?{boxShadow:'inset 0 0 0 2px var(--color-accent)'}:{})}},
+                E('h6',null,day.label),
+                day.exercises.map(ex=>E('div',{key:ex.name,style:{marginBottom:8,paddingBottom:8,borderBottom:'1px solid var(--color-divider)'}},
+                  E('div',{style:{display:'flex',alignItems:'center',gap:6}}, E('input',{className:'cmd-txt',style:{fontWeight:600},defaultValue:ex.name,onBlur:ex.rename}), E('button',{className:'cmd-x-btn',onClick:ex.remove},'×')),
+                  ex.sets.map((st,si)=>E('div',{key:si,style:{display:'flex',gap:6,alignItems:'center',marginTop:4}},
+                    E('input',{className:'input',style:{width:60,fontSize:12},placeholder:'reps',defaultValue:st.reps,onBlur:st.setReps}), E('span',{className:'text-muted',style:{fontSize:11}},'×'),
+                    E('input',{className:'input',style:{width:70,fontSize:12},placeholder:'weight',defaultValue:st.weight,onBlur:st.setWeight}), E('button',{className:'cmd-x-btn',onClick:st.remove},'×'))),
+                  E('button',{className:'btn btn-ghost',style:{fontSize:11,padding:'2px 0'},onClick:ex.addSet},'+ set'),
+                  vals.prEnabled ? E('button',{className:'btn btn-ghost',style:{fontSize:11,padding:'2px 0',display:'block'},onClick:ex.recordPr},'Log top set as PR') : null)),
+                E('input',{className:'input',style:{fontSize:12},placeholder:'Add exercise…',onKeyDown:day.addExerciseKey}))))) };
+        }
+        case 'bPr': {
+          return { condensed: E('div',null, E('label',{style:{display:'flex',alignItems:'center',gap:6,fontSize:11}}, E('input',{type:'checkbox',className:'cmd-chk',style:{width:12,height:12},checked:vals.prEnabled,onChange:vals.togglePr}),'enabled'),
+              vals.prEnabled ? shortList(vals.prVM,2,pr=>E('div',{key:pr.name,style:{fontSize:12,marginTop:4}}, E('b',null,pr.name),' ', pr.entries.length?E('span',{className:'text-muted'},pr.entries[pr.entries.length-1].weight):null)) : null),
+            full: E('div',null, E('label',{style:{display:'flex',alignItems:'center',gap:8,fontSize:13}}, E('input',{type:'checkbox',className:'cmd-chk',checked:vals.prEnabled,onChange:vals.togglePr}),'PR log enabled'),
+              vals.prEnabled ? vals.prVM.map(pr=>E('div',{key:pr.name,style:{marginTop:8}}, E('b',{style:{fontSize:13}},pr.name),
+                E('div',{style:{display:'flex',gap:10,flexWrap:'wrap',fontSize:12,marginTop:4}}, pr.entries.map((e,i)=>E('span',{key:i,className:'tag tag-neutral'},e.date+': '+e.weight))))) : null) };
+        }
+      }
+      return null;
+    };
+
+    const buildCurriculumBuiltin = (prefix,tk,id)=>{
+      const tc = data.tabContent[tk];
+      if(id===prefix+'Resources'){
+        return { condensed: tc.resources.length ? shortList(tc.resources,2,r=>E('div',{key:r.id,style:{fontSize:12}},r.title)) : E('p',{className:'text-muted',style:{fontSize:12}},'No resources yet.'),
+          full: E('div',null, tc.resources.map(r=>E('div',{key:r.id,style:{display:'flex',gap:8,alignItems:'center',padding:'4px 0',borderBottom:'1px solid var(--color-divider)'}},
+              E('span',{style:{fontSize:13}},r.title), E('a',{href:r.url||'#',target:'_blank',style:{fontSize:12}},r.url), E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:()=>this.removeListItem(['tabContent',tk,'resources'],r.id)},'×'))),
+            E('div',{style:{display:'flex',gap:6,marginTop:8}}, E('input',{className:'input',id:'res-title-'+tk,placeholder:'Title'}), E('input',{className:'input',id:'res-url-'+tk,placeholder:'URL'}),
+              E('button',{className:'btn btn-secondary',onClick:()=>{ const t=document.getElementById('res-title-'+tk).value, u=document.getElementById('res-url-'+tk).value; if(t){ this.addListItem(['tabContent',tk,'resources'],{id:U2.uid(),title:t,url:u}); document.getElementById('res-title-'+tk).value=''; document.getElementById('res-url-'+tk).value=''; } }},'Add'))) };
+      }
+      if(id===prefix+'Blocks'){
+        return { condensed: E('p',{className:'text-muted',style:{fontSize:12}}, tc.blocks.length+' content block(s)'), full: this.buildBlocksList(tk) };
+      }
+      if(id===prefix+'Notion'){
+        return { condensed: tc.notionLinks.length ? shortList(tc.notionLinks,2,n=>E('div',{key:n.id,style:{fontSize:12}},n.label)) : E('p',{className:'text-muted',style:{fontSize:12}},'No links yet.'),
+          full: E('div',null, tc.notionLinks.map(n=>E('div',{key:n.id,style:{display:'flex',gap:8,alignItems:'center',padding:'4px 0',borderBottom:'1px solid var(--color-divider)'}},
+              E('span',{style:{fontSize:13}},n.label), E('a',{href:n.url,target:'_blank',style:{fontSize:12}},n.url), E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:()=>this.removeListItem(['tabContent',tk,'notionLinks'],n.id)},'×'))),
+            E('div',{style:{display:'flex',gap:6,marginTop:8}}, E('input',{className:'input',id:'notion-label-'+tk,placeholder:'Label'}), E('input',{className:'input',id:'notion-url-'+tk,placeholder:'URL'}),
+              E('button',{className:'btn btn-secondary',onClick:()=>{ const l=document.getElementById('notion-label-'+tk).value, u=document.getElementById('notion-url-'+tk).value; if(u){ this.addListItem(['tabContent',tk,'notionLinks'],{id:U2.uid(),label:l||u,url:u}); document.getElementById('notion-label-'+tk).value=''; document.getElementById('notion-url-'+tk).value=''; } }},'Add'))) };
+      }
+      if(id===prefix+'Curricula'){
+        const cards = (data.curricula[tk]||[]).map((c,ci)=>this.buildCurriculumCardVM(c,tk,ci)).filter(c=>c.status!=='deactivated');
+        const active = cards.filter(c=>c.status==='active'); const completed = cards.filter(c=>c.status==='completed'||c.status==='practice');
+        const jsonId = 'curJson-'+tk; const err = this.state.importErrors[tk];
+        return { condensed: active.length ? E('div',null, active.map(c=>E('div',{key:c.id,style:{fontSize:12,marginBottom:4}}, E('div',{style:{display:'flex',justifyContent:'space-between'}}, E('span',null,c.name), E('span',{className:'text-muted'},c.pct===null?'active':c.pct+'%')),
+              c.pct!==null?E('div',{style:{height:4,background:'var(--color-neutral-200)',borderRadius:2,overflow:'hidden',marginTop:2}}, E('div',{style:{height:'100%',width:c.pct+'%',background:'var(--color-accent-600)'}})):null))) : E('p',{className:'text-muted',style:{fontSize:12}},'No curricula yet.'),
+          full: E('div',null, active.length ? active.map(renderCurriculumCard) : E('p',{className:'text-muted',style:{fontSize:13}},'No curricula yet — import one below.'),
+            completed.length ? E('div',{style:{marginTop:14}}, E('h6',{className:'text-muted'},'Completed / active practice'), completed.map(renderCurriculumCard)) : null,
+            E('div',{style:{marginTop:14,borderTop:'1px solid var(--color-divider)',paddingTop:10}}, E('h6',null,'Import curriculum JSON'), err ? E('p',{style:{color:'#c96a4f',fontSize:12}},err) : null,
+              E('textarea',{className:'input',id:jsonId,placeholder:'Paste curriculum JSON here…',style:{minHeight:70}}),
+              E('button',{className:'btn btn-secondary',onClick:()=>{ const el=document.getElementById(jsonId); if(this.addCurriculum(tk, el.value)) el.value=''; }},'Import'))) };
+      }
+      return null;
+    };
+
+    const buildResourcesBuiltin = (id)=>{
+      const pom = this.state.pomodoro;
+      switch(id){
+        case 'rPomodoro':
+          return { condensed: E('div',{style:{textAlign:'center'}}, E('p',{className:'text-muted',style:{fontSize:11,margin:0}},vals.pomodoroModeLabel), E('div',{style:{fontFamily:'var(--font-heading)',fontSize:28}},vals.pomodoroClock),
+              E('button',{className:'btn btn-primary',style:{fontSize:11,padding:'4px 10px'},onClick:vals.pomodoroToggle},vals.pomodoroToggleLabel)),
+            full: E('div',{style:{textAlign:'center'}}, E('p',{className:'text-muted',style:{fontSize:12}},vals.pomodoroModeLabel+' · cycle '+vals.pomodoroCycles),
+              E('div',{style:{fontFamily:'var(--font-heading)',fontSize:56,margin:'14px 0'}},vals.pomodoroClock),
+              E('div',{style:{display:'flex',gap:8,justifyContent:'center'}}, E('button',{className:'btn btn-primary',onClick:vals.pomodoroToggle},vals.pomodoroToggleLabel), E('button',{className:'btn btn-secondary',onClick:vals.pomodoroReset},'Reset'))) };
+        case 'rReminders': {
+          const upcoming = vals.remindersVM.filter(r=>!r.due);
+          const dueNow = vals.remindersVM.filter(r=>r.due);
+          const permBtn = vals.notifyPermission==='granted' ? E('span',{className:'tag tag-neutral',style:{fontSize:10}},'Notifications on')
+            : vals.notifyPermission==='unsupported' ? null
+            : E('button',{className:'btn btn-ghost',style:{fontSize:11,padding:'2px 0'},onClick:vals.enableNotifications},'Enable notifications');
+          return { condensed: vals.remindersVM.length ? E('div',null,
+              dueNow.length ? E('div',{style:{fontSize:12,color:'#c96a4f',fontWeight:600}}, dueNow.length+' due now') : null,
+              shortList(upcoming,3,r=>rowLine(r.id,r.label+' — '+r.text,false))) : E('p',{className:'text-muted',style:{fontSize:12}},'No reminders — tap to add one.'),
+            full: E('div',null,
+              E('p',{className:'text-muted',style:{fontSize:11,marginBottom:6}},'Fires a browser notification while this tab is open.'),
+              permBtn,
+              vals.remindersVM.map(r=>E('div',{key:r.id,style:{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'1px solid var(--color-divider)'}},
+                r.due?E('span',{className:'tag',style:{background:'#c96a4f',color:'#fff',fontSize:10,flex:'none'}},'Due'):null,
+                E('div',{style:{flex:1,minWidth:0}}, E('div',{style:{fontSize:13}},r.text), E('div',{className:'text-muted',style:{fontSize:11}},r.label)),
+                E('button',{className:'cmd-x-btn',onClick:r.remove},'×'))),
+              E('div',{style:{display:'flex',gap:6,marginTop:10,flexWrap:'wrap'}},
+                E('input',{className:'input',id:'reminderTextDraft',style:{flex:1,minWidth:140},placeholder:'Remind me to…'}),
+                E('input',{className:'input',id:'reminderAtDraft',type:'datetime-local',style:{width:'auto'}}),
+                E('button',{className:'btn btn-secondary',onClick:vals.addReminderSubmit},'Add'))) };
+        }
+        case 'rScratch':
+          return { condensed: E('p',{style:{fontSize:12,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:4,WebkitBoxOrient:'vertical'}}, vals.scratchPad||E('span',{className:'text-muted'},'Empty — tap to write.')),
+            full: E('textarea',{className:'input',style:{minHeight:160},placeholder:'Quick notes…',defaultValue:vals.scratchPad,onBlur:vals.setScratchPad}) };
+        case 'rPicker':
+          return { condensed: vals.pickerResult ? E('p',{style:{fontFamily:'var(--font-heading)',fontSize:16}},vals.pickerResult) : E('p',{className:'text-muted',style:{fontSize:12}},'Tap to pick from a list.'),
+            full: E('div',null, E('textarea',{className:'input',placeholder:'One option per line…',id:'pickerListDraft'}),
+              E('button',{className:'btn btn-secondary btn-block',style:{marginTop:8},onClick:vals.pickRandom},'Pick one'),
+              vals.pickerResult ? E('p',{style:{fontFamily:'var(--font-heading)',fontSize:20,marginTop:8}},vals.pickerResult) : null) };
+      }
+      return null;
+    };
+
+    // — one dispatcher covering every tile kind (builtin/sticky/chart/json/mirror/folder) —
+    //   used for both the grid's condensed view and the modal's full view, so there is
+    //   exactly one place that knows how to render any given tile.
+    const buildAnyTileContent = (tk,t)=>{
+      let title = TILE_TITLES[t.id]||'';
+      if(t.kind==='builtin'){
+        let c=null;
+        if(tk==='dashboard'||tk==='finances'||tk==='daily') c=buildBuiltinTileContent(t.id, t.size);
+        else if(tk==='body') c=buildBodyBuiltin(t.id, t.size);
+        else if(CURRICULUM_TAB_PREFIX[tk]) c=buildCurriculumBuiltin(CURRICULUM_TAB_PREFIX[tk],tk,t.id);
+        else if(tk==='resources') c=buildResourcesBuiltin(t.id);
+        return c ? {title, condensed:c.condensed, full:c.full} : null;
+      }
+      if(t.kind==='sticky'){
+        const box = E('textarea',{defaultValue:t.text,placeholder:'Note…',style:{background:'transparent',border:'none',width:'100%',height:'100%',resize:'none',fontSize:12,fontFamily:'inherit',color:'inherit',padding:0},onBlur:(e)=>this.setStickyText(tk,t.id,e.target.value)});
+        return {title:'', condensed:box, full:box};
+      }
+      if(t.kind==='chart'){
+        return {title: t.name||'Chart',
+          condensed: E('div',null, E('div',{style:{fontSize:11,fontWeight:600,marginBottom:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},t.name||'Chart'), this.renderChart(t,'55px')),
+          full: this.chartFullEditor(tk,t)};
+      }
+      if(t.kind==='json'){
+        let parsed, hasData=false, err=false;
+        try{ if(t.json && t.json.trim()){ parsed=JSON.parse(t.json); hasData=true; } }catch(e){ err=true; }
+        const pretty = hasData ? JSON.stringify(parsed,null,2) : '';
+        const drawing = hasData ? this.buildJsonShapes(parsed) : null;
+        const drawingSmall = hasData ? this.buildJsonShapes(parsed,80) : null;
+        return {title:'JSON data',
+          condensed: err ? E('p',{style:{fontSize:11,color:'#c96a4f'}},'Invalid JSON')
+            : drawingSmall ? drawingSmall
+            : hasData ? E('pre',{style:{fontSize:10,margin:0,maxHeight:'100%',overflow:'hidden',fontFamily:'monospace',whiteSpace:'pre-wrap'}}, pretty.length>220?pretty.slice(0,220)+'…':pretty)
+            : E('p',{className:'text-muted',style:{fontSize:11}},'Empty — tap to add'),
+          full: E('div',null, E('textarea',{className:'input',style:{fontFamily:'monospace',fontSize:11,minHeight:120},defaultValue:t.json,placeholder:'Paste JSON…',onBlur:(e)=>this.setJsonField(tk,t.id,e.target.value)}),
+            drawing ? E('div',{style:{marginTop:6,padding:10,border:'1px solid var(--color-divider)',borderRadius:8}},drawing) : null,
+            hasData?E('pre',{style:{fontSize:11,background:'var(--color-surface)',padding:6,marginTop:6,overflow:'auto',maxHeight:260,borderRadius:8}},pretty):(err?E('p',{style:{fontSize:11,color:'#c96a4f'}},'Invalid JSON'):null))};
+      }
+      if(t.kind==='mirror'){
+        const mirrorTitleMap = {habitGraph:'Habit graph',heatmap:'Consistency heatmap',counters:'Counters',bibleProgress:'Bible progress',financePie:'Spending pie',financeBar:'Income vs spend'};
+        let body;
+        if(t.mirrorType==='habitGraph') body = this.buildHabitGraph(data,'90px',false);
+        else if(t.mirrorType==='heatmap') body = this.buildHeatmapRecent(dailyHeatmapPct, 7);
+        else if(t.mirrorType==='counters') body = E('div',null, vals.countersVM.slice(0,3).map(c=>E('div',{key:c.id,style:{fontSize:11}},c.name+': '+c.value+'/'+c.goal)));
+        else if(t.mirrorType==='bibleProgress') body = E('div',null, vals.bibleCatVM.map(c=>E('div',{key:c.key,className:'cmd-progress-track',style:{height:5,marginBottom:3}}, E('div',{className:'cmd-progress-fill',style:c.barStyle}))));
+        else if(t.mirrorType==='financePie') body = E('div',{style:{...vals.pieStyle,width:60,height:60}});
+        else if(t.mirrorType==='financeBar') body = E('div',{style:{display:'flex',gap:8,alignItems:'flex-end',height:60}}, E('div',{style:vals.incomeBarStyle}), E('div',{style:vals.spendingBarStyle}));
+        return {title: mirrorTitleMap[t.mirrorType]||t.mirrorType, condensed:body, full:body};
+      }
+      if(t.kind==='folder'){
+        const f = vals.projectFoldersVM.find(x=>x.id===t.id); if(!f) return null;
+        return {title:f.name,
+          condensed: E('div',{style:{fontSize:12}}, E('div',null,f.count+' active'), f.deactivatedCount?E('div',{className:'text-muted'},f.deactivatedCount+' deactivated'):null),
+          full: E('div',null,
+            E('input',{className:'cmd-txt',style:{fontFamily:'var(--font-heading)',fontSize:18,fontWeight:600},defaultValue:f.name,onBlur:f.rename}),
+            f.entries.map(e=>E('div',{key:e.id,style:{borderTop:'1px solid var(--color-divider)',padding:'10px 0'}},
+              E('div',{style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+                E('input',{className:'cmd-txt',style:{fontWeight:600},defaultValue:e.name,onBlur:e.rename}),
+                E('select',{className:'input',style:{width:'auto'},defaultValue:e.status,onChange:e.setStatus}, E('option',null,'Future'),E('option',null,'In Progress'),E('option',null,'Completed')),
+                E('button',{className:'btn btn-ghost',style:{fontSize:11},onClick:e.deactivate},'Deactivate'),
+                E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:e.remove},'×')),
+              E('textarea',{className:'input',style:{marginTop:6,fontSize:13},placeholder:'What should this be?',defaultValue:e.description,onBlur:e.setDescription}),
+              e.showNotion ? E('input',{className:'input',style:{marginTop:6,fontSize:13},placeholder:'Notion file link',defaultValue:e.notionLink,onBlur:e.setNotion}) : null,
+              E('select',{className:'input',style:{marginTop:6,width:'auto'},defaultValue:e.curriculumKey,onChange:e.setCurriculum}, vals.curriculumOptions.map(co=>E('option',{key:co.key,value:co.key},co.label))))),
+            f.deactivatedCount ? E('div',{style:{marginTop:8}}, E('button',{className:'btn btn-ghost',style:{fontSize:11,paddingLeft:0},onClick:f.toggleShowDeactivated}, (f.showDeactivated?'Hide':'Show')+' deactivated ('+f.deactivatedCount+')'),
+              f.showDeactivated ? f.deactivated.map(en=>E('div',{key:en.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',opacity:0.6}}, E('span',{style:{fontSize:13}},en.name), E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:()=>this.update(d=>{const ff=d.projects.find(x=>x.id===f.id); ff.children=ff.children.filter(x=>x.id!==en.id);})},'×'))) : null) : null,
+            E('div',{style:{display:'flex',gap:6,marginTop:8}}, E('input',{className:'input',id:f.entryDraftId,placeholder:'New entry name, press Enter',onKeyDown:f.addEntryKey})))};
+      }
+      return null;
+    };
+
+    const rawTiles = (data.tiles[tabKey]||[]).filter(t=>!t.hidden);
+    const dpo = this.state.dragPreviewOrder;
+    const dpoValid = dpo && dpo.length===rawTiles.length && dpo.every(id=>rawTiles.some(t=>t.id===id));
+    const activeTiles = dpoValid ? dpo.map(id=>rawTiles.find(t=>t.id===id)) : rawTiles;
+    vals.gridTiles = activeTiles.map(t=>{
+      const content = buildAnyTileContent(tabKey,t); if(!content) return null;
+      const dims = TILE_DIMS[t.size] || TILE_DIMS.wide;
+      const drag = this.buildDragHandlers(tabKey,t.id);
+      const deletable = t.kind!=='builtin';
+      const style = { minHeight:dims.minH+'px' };
+      if(t.kind==='sticky') style.background = t.color;
+      return { key:t.id, kind:t.kind, title:content.title, style, colSpan:dims.w, condensed:content.condensed,
+        bodyClick: t.kind==='sticky' ? undefined : ()=>this.openModal(tabKey,t.id),
+        onDown:drag.onDown, onMove:drag.onMove, onUp:drag.onUp,
+        setSizeS:()=>this.setTileSize(tabKey,t.id,'s'), setSizeWide:()=>this.setTileSize(tabKey,t.id,'wide'), setSizeLarge:()=>this.setTileSize(tabKey,t.id,'large'), setSizeFull:()=>this.setTileSize(tabKey,t.id,'full'),
+        remove:()=>this.removeOrHideTile(tabKey,t.id,deletable), removeTitle: deletable?'Remove':'Hide (restore in Settings)' };
+    }).filter(Boolean);
+    vals.hasTiles = vals.gridTiles.length>0; vals.noTiles = !vals.hasTiles;
+
+    vals.modalTile = null; vals.closeModal = ()=>this.closeModal();
+    if(this.state.modalTab===tabKey && this.state.modalId){
+      const mt = (data.tiles[tabKey]||[]).find(x=>x.id===this.state.modalId);
+      if(mt){ const content = buildAnyTileContent(tabKey,mt); if(content) vals.modalTile = {title: content.title||TILE_TITLES[mt.id]||'', full: content.full}; }
+    }
+
+    vals.pinnedOpen = this.getUi('pinned-'+tabKey,'open',false); vals.togglePinned = ()=>this.toggleUi('pinned-'+tabKey,'open',false); vals.pinnedIcon = vals.pinnedOpen ? '−' : '+';
+    vals.pinnedText = data.pinnedNotes[tabKey] || ''; vals.setPinnedText = (e)=>this.setPinnedText(tabKey, e.target.value);
+
+    return vals;
+  }
+}
+
+</script>
+</body>
+</html>
