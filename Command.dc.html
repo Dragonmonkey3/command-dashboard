@@ -58,7 +58,9 @@
     /* — modal — */
     .cmd-modal-backdrop{ position:fixed;inset:0;background:color-mix(in srgb, var(--color-neutral-900) 45%, transparent);display:flex;align-items:center;justify-content:center;padding:var(--cmd-gap);z-index:100; }
     .cmd-modal{ background:var(--color-bg);border-radius:16px;box-shadow:var(--shadow-lg);width:min(640px,100%);max-height:85vh;display:flex;flex-direction:column;overflow:hidden; }
+    .cmd-modal-full{ width:calc(100vw - 32px);max-width:1100px;height:calc(100vh - 32px);max-height:calc(100vh - 32px); }
     .cmd-modal-head{ display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid var(--color-divider);flex:none; }
+    .cmd-modal-head-actions{ display:flex;align-items:center;gap:4px;flex:none; }
     .cmd-modal-title{ margin:0;font-size:17px; }
     .cmd-modal-body{ padding:16px;overflow:auto; }
 
@@ -148,6 +150,7 @@
       </div>
     </sc-if>
 
+    <sc-if value="{{ usesTileGrid }}" hint-placeholder-val="{{ true }}">
     <div class="cmd-toolbar">
       <span class="text-muted" style="font-size:12px">Drag ⋮⋮ to reorder · hover ⤢ to resize · tap a tile to open it</span>
       <sc-if value="{{ canResetLayout }}" hint-placeholder-val="{{ false }}">
@@ -200,6 +203,7 @@
     <sc-if value="{{ noTiles }}" hint-placeholder-val="{{ false }}">
       <p class="cmd-tile-empty">Nothing here yet — add a sticky note or a block above to get started.</p>
     </sc-if>
+    </sc-if>
 
     <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
       <div style="display:flex;flex-direction:column;gap:var(--cmd-gap);max-width:460px">
@@ -213,6 +217,10 @@
             <button class="btn btn-secondary" onClick="{{ exportData }}">Export data (JSON)</button>
             <label class="btn btn-secondary" style="cursor:pointer">Import data<input type="file" accept="application/json" style="display:none" onChange="{{ importData }}" /></label>
           </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+            <button class="btn btn-secondary" onClick="{{ exportSummary }}">Export summary (.txt)</button>
+          </div>
+          <p class="text-muted" style="font-size:12px;margin-top:6px">A plain-text snapshot — today's tasks, this week's consistency and finances, streaks, chunks, and notes.</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
             <button class="btn btn-secondary" onClick="{{ resetAllData }}">Reset to sample data</button>
             <button class="btn btn-secondary" onClick="{{ deleteSampleData }}">Delete all data (start blank)</button>
@@ -255,6 +263,24 @@
       </div>
     </sc-if>
 
+    <sc-if value="{{ isBadges }}" hint-placeholder-val="{{ false }}">
+      <div class="cmd-card" style="padding:var(--space-4)">
+        <h4 style="margin:0 0 4px">Completed courses</h4>
+        <p class="text-muted" style="font-size:12px;margin:0 0 10px">Every finished or active-practice course across STEM, Bible, and Civ Studies.</p>
+        <sc-if value="{{ hasBadges }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <sc-for list="{{ badgesVM }}" as="b" hint-placeholder-count="3">
+              <span class="tag tag-accent" style="cursor:pointer" onClick="{{ b.toggle }}">✓ {{ b.subjectLabel }} · {{ b.name }}</span>
+            </sc-for>
+          </div>
+          <div style="margin-top:12px">{{ badgesDetail }}</div>
+        </sc-if>
+        <sc-if value="{{ noBadges }}" hint-placeholder-val="{{ true }}">
+          <p class="text-muted" style="font-size:13px">No completed courses yet — finish one in STEM, Bible, or Civ Studies and it'll show up here.</p>
+        </sc-if>
+      </div>
+    </sc-if>
+
     <sc-if value="{{ hasToasts }}" hint-placeholder-val="{{ false }}">
       <div class="cmd-toast-wrap">
         <sc-for list="{{ dueToasts }}" as="toast" hint-placeholder-count="1">
@@ -269,10 +295,13 @@
 
     <sc-if value="{{ modalTile }}" hint-placeholder-val="{{ false }}">
       <div class="cmd-modal-backdrop" onClick="{{ closeModal }}">
-        <div class="cmd-modal" onClick="{{ stopProp }}">
-          <div class="cmd-modal-head">
+        <div class="{{ modalTile.className }}" onClick="{{ stopProp }}">
+          <div class="cmd-modal-head" style="cursor:move" onPointerDown="{{ dragModalStart }}">
             <h4 class="cmd-modal-title">{{ modalTile.title }}</h4>
-            <button class="cmd-x-btn" onClick="{{ closeModal }}">×</button>
+            <div class="cmd-modal-head-actions">
+              <button class="cmd-x-btn" title="{{ modalTile.fullscreenTitle }}" onClick="{{ toggleModalFullscreen }}">{{ modalTile.fullscreenIcon }}</button>
+              <button class="cmd-x-btn" onClick="{{ closeModal }}">×</button>
+            </div>
           </div>
           <div class="cmd-modal-body">{{ modalTile.full }}</div>
         </div>
@@ -418,7 +447,7 @@ class Component extends DCLogic {
     this.state = {
       data, activeTab:'dashboard', viewDate: U.todayKey(),
       uiById:{}, importErrors:{}, habitDetailOpen:false, hideCompleted:false, moreTabsOpen:false,
-      modalTab:null, modalId:null, dragPreviewOrder:null, addBlockMenuOpen:false, dueToasts:[],
+      modalTab:null, modalId:null, modalFullscreen:false, dragPreviewOrder:null, addBlockMenuOpen:false, dueToasts:[],
       pomodoro: {mode:'work', secondsLeft:(props.pomodoroWorkMinutes??25)*60, running:false, cycles:0}
     };
   }
@@ -559,6 +588,66 @@ class Component extends DCLogic {
   setChapterCount(cat,value){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); if(!day.devotion.chapters) day.devotion.chapters={ot:0,nt:0,psalms:0,proverbs:0}; let n=Number(value); if(isNaN(n)||n<0) n=0; day.devotion.chapters[cat]=n; }); }
   resetBibleProgress(){ if(!window.confirm('Reset all Bible chapter progress? This clears logged chapters on every day.')) return; this.update(data=>{ Object.keys(data.days).forEach(k=>{ if(data.days[k].devotion) data.days[k].devotion.chapters={ot:0,nt:0,psalms:0,proverbs:0}; }); }); }
   addJournalEntry(text){ if(!text||!text.trim())return; const now=new Date(); let key=U.todayKey(); if(now.getHours()<6) key=U.addDays(key,-1); this.update(data=>data.journal.unshift({id:U.uid(),dateKey:key,text})); }
+  // — plain-text daily snapshot: today's tasks, last-7-days consistency & finances
+  //   (clipped to not reach before the app's earliest recorded day), streaks, chunks, notes.
+  buildExportText(){
+    const data = this.state.data;
+    const today = U.todayKey();
+    const wd = U.weekdayOf(today);
+    const day0 = this.ensureDayReadonly(data, today);
+    const lines = [];
+    const push = (s)=>lines.push(s===undefined?'':s);
+    push('COMMAND — daily export');
+    push('Generated: '+new Date().toString());
+    push('');
+    push('STREAK: '+(data.streak||0)+' day(s)');
+    push('');
+    push("TODAY'S TASKS — "+today);
+    data.dailyRecurring.forEach(t=>push('['+(day0.dailyDone[t.id]?'x':' ')+'] '+t.text));
+    data.adHoc.forEach(t=>push('['+(t.done?'x':' ')+'] '+t.text+(t.deadline?' (due '+t.deadline+')':'')));
+    data.weeklyTasks.filter(t=>t.days.includes(wd)).forEach(t=>push('['+(day0.weeklyDone[t.id]?'x':' ')+'] '+t.text+' (weekly)'));
+    push('');
+    push('DAILY CHUNKS');
+    Object.keys(data.chunks).forEach(cn=>{ push(cn+':'); (data.chunks[cn]||[]).forEach(it=>push('  ['+(day0.chunkDone[it.id]?'x':' ')+'] '+it.text)); });
+    push('');
+    push('WEEKDAY SCHEDULE — '+wd);
+    (data.weekdayChunks[wd]||[]).forEach(it=>push('['+(day0.wdChunkDone[it.id]?'x':' ')+'] '+it.text));
+    push('');
+
+    const firstDayKey = Object.keys(data.days).sort()[0];
+    const days = []; for(let i=6;i>=0;i--){ const k=U.addDays(today,-i); if(!firstDayKey || k>=firstDayKey) days.push(k); }
+    push('CONSISTENCY — last '+days.length+' day(s)');
+    days.forEach(k=>{ const d=data.days[k]; if(!d){ push(k+': no data'); return; }
+      const total=data.dailyRecurring.length; const done = total?data.dailyRecurring.filter(t=>d.dailyDone[t.id]).length:0;
+      push(k+': '+(total?Math.round(done/total*100)+'% daily tasks':'—')+', gym '+(d.gym?'yes':'no')); });
+    push('');
+
+    const fin = data.finances;
+    const txs = fin.transactions.filter(t=>days.includes(t.date));
+    push('FINANCES — last '+days.length+' day(s)');
+    const catTotals = {}; txs.forEach(t=>{ const cat=fin.categories.find(c=>c.id===t.catId); const name=cat?cat.name:'Other'; catTotals[name]=(catTotals[name]||0)+t.amount; });
+    Object.keys(catTotals).forEach(name=>push('  '+name+': $'+catTotals[name]));
+    push('  Total spent: $'+txs.reduce((a,t)=>a+t.amount,0));
+    push('  Monthly income streams total: $'+fin.incomeStreams.reduce((a,i)=>a+(Number(i.amount)||0),0));
+    push('');
+
+    push('BIBLE PROGRESS (cumulative)');
+    const bibleTotals = {ot:0,nt:0,psalms:0,proverbs:0};
+    Object.keys(data.days).forEach(k=>{ const dv=data.days[k].devotion; if(dv && dv.chapters) U.BIBLE_CATEGORIES.forEach(c=>{ bibleTotals[c.key]+=Number(dv.chapters[c.key])||0; }); });
+    U.BIBLE_CATEGORIES.forEach(c=>push('  '+c.label+': '+bibleTotals[c.key]+' / '+c.target));
+    push('');
+
+    push('NOTES');
+    Object.keys(data.pinnedNotes||{}).forEach(tk=>{ if(data.pinnedNotes[tk] && data.pinnedNotes[tk].trim()) push('  Pinned ('+tk+'): '+data.pinnedNotes[tk]); });
+    (data.journal||[]).slice(0,5).forEach(j=>push('  Journal '+j.dateKey+': '+j.text));
+    return lines.join('\n');
+  }
+  exportSummary(){
+    const blob = new Blob([this.buildExportText()],{type:'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download='command-summary-'+U.todayKey()+'.txt'; a.click();
+    URL.revokeObjectURL(url);
+  }
   addReminder(text,at){ if(!text||!text.trim()||!at)return; this.update(data=>{ data.reminders.push({id:U.uid(),text:text.trim(),at,notified:false}); data.reminders.sort((a,b)=>a.at.localeCompare(b.at)); }); }
   removeReminder(id){ this.update(data=>{ data.reminders=data.reminders.filter(r=>r.id!==id); }); }
   requestNotifyPermission(){ if(typeof Notification!=='undefined') Notification.requestPermission().then(()=>this.forceUpdate()); }
@@ -583,8 +672,25 @@ class Component extends DCLogic {
     if(this.state.modalTab===tabKey && this.state.modalId===id) this.closeModal();
   }
   restoreTile(tabKey,id){ this.update(data=>{ const t=(data.tiles[tabKey]||[]).find(x=>x.id===id); if(t) t.hidden=false; }); }
-  openModal(tabKey,id){ this.setState({modalTab:tabKey, modalId:id}); }
-  closeModal(){ this.setState({modalTab:null, modalId:null}); }
+  openModal(tabKey,id){ this.setState({modalTab:tabKey, modalId:id, modalFullscreen:false}); }
+  closeModal(){ this.setState({modalTab:null, modalId:null, modalFullscreen:false}); }
+  toggleModalFullscreen(){ this.setState(s=>({modalFullscreen:!s.modalFullscreen})); }
+  // — draggable modal: plain DOM position, no React state — the modal is a fresh element
+  // every time it opens (sc-if unmount/remount), so it always starts centered again.
+  dragModalStart(e){
+    if(e.target.closest('button')) return;
+    const modalEl = document.querySelector('.cmd-modal'); if(!modalEl) return;
+    const rect = modalEl.getBoundingClientRect();
+    const startX = e.clientX, startY = e.clientY, origLeft = rect.left, origTop = rect.top;
+    modalEl.style.position = 'fixed'; modalEl.style.left = origLeft+'px'; modalEl.style.top = origTop+'px'; modalEl.style.margin = '0';
+    const onMove = (ev)=>{
+      const maxLeft = window.innerWidth - 60, maxTop = window.innerHeight - 40;
+      modalEl.style.left = Math.min(maxLeft, Math.max(-rect.width+60, origLeft+ev.clientX-startX))+'px';
+      modalEl.style.top = Math.min(maxTop, Math.max(0, origTop+ev.clientY-startY))+'px';
+    };
+    const onUp = ()=>{ document.removeEventListener('pointermove',onMove); document.removeEventListener('pointerup',onUp); };
+    document.addEventListener('pointermove',onMove); document.addEventListener('pointerup',onUp);
+  }
 
   // — live drag-to-reorder: reordering during the drag only touches transient state
   //   (fast, no localStorage writes on every pointer move); the real data.tiles order
@@ -665,6 +771,9 @@ class Component extends DCLogic {
   toggleNode(tab,ci,mi,nid){ this.update(data=>{ const n=data.curricula[tab][ci].modules[mi].tree_nodes.find(x=>x.id===nid); if(n) n.done=!n.done; }); }
   toggleDrill(tab,ci,mi,di){ this.update(data=>{ data.curricula[tab][ci].modules[mi].daily_drills[di].done=!data.curricula[tab][ci].modules[mi].daily_drills[di].done; }); }
   toggleProj(tab,ci,mi,pi){ this.update(data=>{ data.curricula[tab][ci].modules[mi].projects[pi].done=!data.curricula[tab][ci].modules[mi].projects[pi].done; }); }
+  removeNode(tab,ci,mi,nid){ this.update(data=>{ const m=data.curricula[tab][ci].modules[mi]; m.tree_nodes=m.tree_nodes.filter(x=>x.id!==nid); m.tree_nodes.forEach(n=>{ n.prerequisites=(n.prerequisites||[]).filter(p=>p!==nid); }); }); }
+  removeDrill(tab,ci,mi,di){ this.update(data=>{ data.curricula[tab][ci].modules[mi].daily_drills.splice(di,1); }); }
+  removeProj(tab,ci,mi,pi){ this.update(data=>{ data.curricula[tab][ci].modules[mi].projects.splice(pi,1); }); }
   setCurNotes(tab,ci,val){ this.update(data=>{ data.curricula[tab][ci].notes=val; }); }
   addCurriculumResource(tab,ci,title,url){ if(!title)return; this.update(data=>{ if(!data.curricula[tab][ci].resources) data.curricula[tab][ci].resources=[]; data.curricula[tab][ci].resources.push({title,url:url||'',cost:'free'}); }); }
   deactivateCurriculum(tab,ci){ this.update(data=>{ data.curricula[tab][ci].status='deactivated'; }); }
@@ -727,7 +836,10 @@ class Component extends DCLogic {
       const dayNum = new Date(c.key+'T12:00:00').getDate();
       return E('div',{key:c.key,className:'cmd-heat-cell',title:(isToday?'Today — ':'')+c.key+(c.pct!=null?' — '+Math.round(c.pct)+'%':' — no data'),
         style:{aspectRatio:'1',background:bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',color:'#fff',borderRadius:'3px',
-          boxShadow: isToday?'0 0 0 2px var(--color-accent)':'none'}}, mark, !mark ? String(dayNum) : null);
+          // a plain ring in the accent color reads as invisible against similarly-toned cell
+          // fills (red/gold) — a neutral buffer ring between the cell and the accent ring
+          // keeps "today" visible no matter what color the cell itself is.
+          boxShadow: isToday?'0 0 0 1px var(--color-bg), 0 0 0 3px var(--color-accent)':'none'}}, mark, !mark ? String(dayNum) : null);
     });
     return E('div',{style:{display:'grid',gridTemplateColumns:'repeat('+(cols||7)+',1fr)',gap:'3px',maxWidth:maxWidth||'auto'}}, cellEls);
   }
@@ -746,7 +858,7 @@ class Component extends DCLogic {
   buildHeatmapRecent(getPct, daysBack){
     daysBack = daysBack || 7;
     const today = U.todayKey();
-    const cells = []; for(let i=0;i<daysBack;i++){ const key=U.addDays(today,-i); cells.push({key, pct:getPct(key)}); }
+    const cells = []; for(let i=daysBack-1;i>=0;i--){ const key=U.addDays(today,-i); cells.push({key, pct:getPct(key)}); }
     return this.renderHeatCells(cells, undefined, daysBack);
   }
   buildHeatmapHistory(getPct, monthsBack){
@@ -816,9 +928,11 @@ class Component extends DCLogic {
     layers.forEach((layer,d)=>{ const rowW = layer.length*(NODE_W+GAP_X); const offsetX=(W-rowW)/2; layer.forEach((n,i)=>{ pos[n.id]={x:offsetX+i*(NODE_W+GAP_X)+GAP_X/2, y:d*(NODE_H+GAP_Y)+GAP_Y/2}; }); });
     const lines = [];
     nodes.forEach(n=>{ (n.prerequisites||[]).forEach(p=>{ if(pos[p] && pos[n.id]){ lines.push(E('line',{key:p+'-'+n.id, x1:pos[p].x+NODE_W/2, y1:pos[p].y+NODE_H, x2:pos[n.id].x+NODE_W/2, y2:pos[n.id].y, stroke:'var(--color-accent-500)', strokeWidth:1.5})); } }); });
-    const boxes = nodes.map(n=>{ const p=pos[n.id]; const toggle=()=>this.toggleNode(tab,ci,mi,n.id);
+    const boxes = nodes.map(n=>{ const p=pos[n.id]; const toggle=()=>this.toggleNode(tab,ci,mi,n.id); const remove=(e)=>{ e.stopPropagation(); this.removeNode(tab,ci,mi,n.id); };
       return E('div',{key:n.id, onClick:toggle, title:n.description||'', style:{position:'absolute', left:p.x, top:p.y, width:NODE_W, height:NODE_H, border:'1px solid var(--color-divider)', borderRadius:'8px', background:n.done?'var(--color-accent-100)':'var(--color-bg)', padding:'6px 8px', fontSize:'12px', cursor:'pointer', overflow:'hidden', boxShadow:'var(--shadow-sm)'}},
-        E('div',{style:{fontWeight:600, color: n.done?'var(--color-accent-800)':'inherit'}}, (n.done?'✓ ':'')+n.title));
+        E('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:4}},
+          E('div',{style:{fontWeight:600, color: n.done?'var(--color-accent-800)':'inherit'}}, (n.done?'✓ ':'')+n.title),
+          E('button',{className:'cmd-x-btn',style:{padding:0,fontSize:13,lineHeight:1,flex:'none'},onClick:remove,title:'Delete lesson'},'×')));
     });
     return E('div',{style:{position:'relative', width:W, height:H, minWidth:'100%'}}, E('svg',{width:W,height:H,style:{position:'absolute',left:0,top:0}}, lines), boxes);
   }
@@ -913,8 +1027,8 @@ class Component extends DCLogic {
     const modulesVM = c.modules.map((m,mi)=>({
       title:m.title, description:m.description, treeEl: this.buildSkillTree(m,tab,ci,mi),
       lessons: m.lessons||[],
-      drills:(m.daily_drills||[]).map((d,di)=>({title:d.title,description:d.description,done:d.done,toggle:()=>this.toggleDrill(tab,ci,mi,di)})),
-      projects:(m.projects||[]).map((p,pi)=>({title:p.title,description:p.description,unlocks:p.unlocks_after,done:p.done,toggle:()=>this.toggleProj(tab,ci,mi,pi)}))
+      drills:(m.daily_drills||[]).map((d,di)=>({title:d.title,description:d.description,done:d.done,toggle:()=>this.toggleDrill(tab,ci,mi,di),remove:()=>this.removeDrill(tab,ci,mi,di)})),
+      projects:(m.projects||[]).map((p,pi)=>({title:p.title,description:p.description,unlocks:p.unlocks_after,done:p.done,toggle:()=>this.toggleProj(tab,ci,mi,pi),remove:()=>this.removeProj(tab,ci,mi,pi)}))
     }));
     return {
       id, name:c.skill_name, type:c.type, status:c.status, startDate:c.startDate, pct, isSoftDone,
@@ -937,7 +1051,7 @@ class Component extends DCLogic {
     const bodyDayRaw = this.ensureDayReadonly(data, viewDate);
     const wd = U2.weekdayOf(today);
 
-    const TABS = [ ['dashboard','Dashboard'], ['daily','Daily'], ['finances','Finances'], ['body','Body'], ['civ','Civ Studies'], ['stem','STEM'], ['bible','Bible'], ['projects','Projects'], ['resources','Resources'] ]
+    const TABS = [ ['dashboard','Dashboard'], ['daily','Daily'], ['finances','Finances'], ['body','Body'], ['civ','Civ Studies'], ['stem','STEM'], ['bible','Bible'], ['projects','Projects'], ['resources','Resources'], ['badges','Badges'] ]
       .map(([k,l])=>[k, data.tabLabelOverrides[k]||l])
       .concat(data.customTabs.map(t=>[t.id,t.label])).concat([['settings','Settings']]);
     if(!data.hiddenTabs) data.hiddenTabs=[];
@@ -951,7 +1065,7 @@ class Component extends DCLogic {
     const vals = {
       isDashboard: tabKey==='dashboard', isDaily: tabKey==='daily', isFinances: tabKey==='finances', isBody: tabKey==='body',
       isStem: tabKey==='stem', isBible: tabKey==='bible', isCiv: tabKey==='civ', isProjects: tabKey==='projects', isResources: tabKey==='resources',
-      isSettings: tabKey==='settings',
+      isSettings: tabKey==='settings', isBadges: tabKey==='badges',
       tabs, moreTabsOpen: this.state.moreTabsOpen, toggleMoreTabs: ()=>this.setState(s=>({moreTabsOpen:!s.moreTabsOpen})),
       moreTabsIconStyle: this.state.moreTabsOpen?'transform:rotate(180deg)':'transform:rotate(0deg)',
       activeTabLabel, streakDays: data.streak||1, stopProp: (e)=>e.stopPropagation(),
@@ -1119,6 +1233,7 @@ class Component extends DCLogic {
     vals.darkMode = !!data.settings.darkMode;
     vals.toggleDarkMode = ()=>this.update(d=>{ d.settings.darkMode=!d.settings.darkMode; });
     vals.exportData = ()=>{ const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='command-data.json'; a.click(); URL.revokeObjectURL(url); };
+    vals.exportSummary = ()=>this.exportSummary();
     vals.importData = (e)=>{ const file=e.target.files[0]; if(!file) return; const reader=new FileReader(); reader.onload=()=>{ try{ const obj=this.normalizeData(JSON.parse(reader.result)); this.persist(obj); this.setState({data:obj, activeTab:'dashboard', modalTab:null, modalId:null}); }catch(err){ alert('That file is not valid JSON.'); } }; reader.readAsText(file); };
     vals.resetAllData = ()=>{ if(window.confirm('Reset all data back to the sample dataset? This cannot be undone.')){ const fresh=this.normalizeData(U2.sampleData()); this.persist(fresh); this.setState({data:fresh, activeTab:'dashboard', modalTab:null, modalId:null}); } };
     vals.deleteSampleData = ()=>{ if(window.confirm('Delete all data and start blank? This cannot be undone.')){ const fresh=this.normalizeData(U2.blankData()); this.persist(fresh); this.setState({data:fresh, activeTab:'dashboard', modalTab:null, modalId:null}); } };
@@ -1172,8 +1287,8 @@ class Component extends DCLogic {
           E('h6',null,'Module '+(mi+1)+' — '+m.title), E('p',{className:'text-muted',style:{fontSize:'12px'}},m.description),
           E('div',{style:{overflowX:'auto',padding:'8px 0'}}, m.treeEl),
           m.lessons.length ? E('div',{style:{fontSize:'13px'}}, E('b',null,'Lessons: '), m.lessons.map(l=>l.title).join(', ')) : null,
-          m.drills.map((d,di)=>E('label',{key:di,style:{display:'flex',gap:'8px',fontSize:'13px',margin:'4px 0'}}, E('input',{type:'checkbox',className:'cmd-chk',checked:d.done,onChange:d.toggle}), d.title)),
-          m.projects.map((p,pi)=>E('label',{key:pi,style:{display:'flex',gap:'8px',fontSize:'13px',margin:'4px 0'}}, E('input',{type:'checkbox',className:'cmd-chk',checked:p.done,onChange:p.toggle}), p.title+' ('+p.unlocks+')'))
+          m.drills.map((d,di)=>E('div',{key:di,style:{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',margin:'4px 0'}}, E('label',{style:{display:'flex',gap:'8px',flex:1,minWidth:0}}, E('input',{type:'checkbox',className:'cmd-chk',checked:d.done,onChange:d.toggle}), d.title), E('button',{className:'cmd-x-btn',onClick:d.remove,title:'Delete drill'},'×'))),
+          m.projects.map((p,pi)=>E('div',{key:pi,style:{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',margin:'4px 0'}}, E('label',{style:{display:'flex',gap:'8px',flex:1,minWidth:0}}, E('input',{type:'checkbox',className:'cmd-chk',checked:p.done,onChange:p.toggle}), p.title+' ('+p.unlocks+')'), E('button',{className:'cmd-x-btn',onClick:p.remove,title:'Delete project'},'×')))
         ))),
         E('div',null, E('h6',null,'Resources'),
           E('ul',{style:{fontSize:'13px'}}, card.resources.map((r,i)=>E('li',{key:i}, r.title+(r.cost?' ('+r.cost+')':'')))),
@@ -1457,10 +1572,23 @@ class Component extends DCLogic {
         const cards = (data.curricula[tk]||[]).map((c,ci)=>this.buildCurriculumCardVM(c,tk,ci)).filter(c=>c.status!=='deactivated');
         const active = cards.filter(c=>c.status==='active'); const completed = cards.filter(c=>c.status==='completed'||c.status==='practice');
         const jsonId = 'curJson-'+tk; const err = this.state.importErrors[tk];
+        // hybrid tabs: 2+ active courses switch via a tab strip instead of stacking every
+        // course's full detail one after another — a single course keeps its simple
+        // click-header-to-expand behavior.
+        let activeBody;
+        if(active.length > 1){
+          const selId = this.getUi(prefix+'curTabs','sel', active[0].id);
+          const selected = active.find(c=>c.id===selId) || active[0];
+          activeBody = E('div',null,
+            E('div',{style:{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}, active.map(c=>E('button',{key:c.id,className:'btn '+(c.id===selected.id?'btn-primary':'btn-secondary'),style:{fontSize:12,padding:'4px 10px'},onClick:()=>this.setUi(prefix+'curTabs','sel',c.id)}, c.name))),
+            renderCurriculumCard({...selected, open:true, toggle:()=>{}, icon:''}));
+        } else {
+          activeBody = active.length ? active.map(renderCurriculumCard) : E('p',{className:'text-muted',style:{fontSize:13}},'No curricula yet — import one below.');
+        }
         return { condensed: active.length ? E('div',null, active.map(c=>E('div',{key:c.id,style:{fontSize:12,marginBottom:4}}, E('div',{style:{display:'flex',justifyContent:'space-between'}}, E('span',null,c.name), E('span',{className:'text-muted'},c.pct===null?'active':c.pct+'%')),
               c.pct!==null?E('div',{style:{height:4,background:'var(--color-neutral-200)',borderRadius:2,overflow:'hidden',marginTop:2}}, E('div',{style:{height:'100%',width:c.pct+'%',background:'var(--color-accent-600)'}})):null))) : E('p',{className:'text-muted',style:{fontSize:12}},'No curricula yet.'),
-          full: E('div',null, active.length ? active.map(renderCurriculumCard) : E('p',{className:'text-muted',style:{fontSize:13}},'No curricula yet — import one below.'),
-            completed.length ? E('div',{style:{marginTop:14}}, E('h6',{className:'text-muted'},'Completed / active practice'), completed.map(renderCurriculumCard)) : null,
+          full: E('div',null, activeBody,
+            completed.length ? E('p',{className:'text-muted',style:{fontSize:12,marginTop:10}}, completed.length+' completed — see the Badges tab.') : null,
             E('div',{style:{marginTop:14,borderTop:'1px solid var(--color-divider)',paddingTop:10}}, E('h6',null,'Import curriculum JSON'), err ? E('p',{style:{color:'#c96a4f',fontSize:12}},err) : null,
               E('textarea',{className:'input',id:jsonId,placeholder:'Paste curriculum JSON here…',style:{minHeight:70}}),
               E('button',{className:'btn btn-secondary',onClick:()=>{ const el=document.getElementById(jsonId); if(this.addCurriculum(tk, el.value)) el.value=''; }},'Import'))) };
@@ -1598,15 +1726,28 @@ class Component extends DCLogic {
         remove:()=>this.removeOrHideTile(tabKey,t.id,deletable), removeTitle: deletable?'Remove':'Hide (restore in Settings)' };
     }).filter(Boolean);
     vals.hasTiles = vals.gridTiles.length>0; vals.noTiles = !vals.hasTiles;
+    vals.usesTileGrid = tabKey!=='settings' && tabKey!=='badges';
 
-    vals.modalTile = null; vals.closeModal = ()=>this.closeModal();
+    vals.modalTile = null; vals.closeModal = ()=>this.closeModal(); vals.toggleModalFullscreen = ()=>this.toggleModalFullscreen();
+    vals.dragModalStart = (e)=>this.dragModalStart(e);
     if(this.state.modalTab===tabKey && this.state.modalId){
       const mt = (data.tiles[tabKey]||[]).find(x=>x.id===this.state.modalId);
-      if(mt){ const content = buildAnyTileContent(tabKey,mt); if(content) vals.modalTile = {title: content.title||TILE_TITLES[mt.id]||'', full: content.full}; }
+      if(mt){ const content = buildAnyTileContent(tabKey,mt); if(content){
+        const fs = this.state.modalFullscreen;
+        vals.modalTile = {title: content.title||TILE_TITLES[mt.id]||'', full: content.full,
+          className: 'cmd-modal'+(fs?' cmd-modal-full':''), fullscreenIcon: fs?'⤡':'⤢', fullscreenTitle: fs?'Exit fullscreen':'Fullscreen'};
+      } }
     }
 
     vals.pinnedOpen = this.getUi('pinned-'+tabKey,'open',false); vals.togglePinned = ()=>this.toggleUi('pinned-'+tabKey,'open',false); vals.pinnedIcon = vals.pinnedOpen ? '−' : '+';
     vals.pinnedText = data.pinnedNotes[tabKey] || ''; vals.setPinnedText = (e)=>this.setPinnedText(tabKey, e.target.value);
+
+    // — Badges tab: every completed/practice course across every subject, in one place —
+    const badgeSubjects = [['stem','STEM'],['bible','Bible'],['civ','Civ Studies']];
+    const badges = [];
+    badgeSubjects.forEach(([bk,label])=>{ (data.curricula[bk]||[]).forEach((c,ci)=>{ if(c.status==='completed'||c.status==='practice'){ badges.push({...this.buildCurriculumCardVM(c,bk,ci), subjectLabel:label}); } }); });
+    vals.badgesVM = badges; vals.hasBadges = badges.length>0; vals.noBadges = !vals.hasBadges;
+    vals.badgesDetail = badges.filter(b=>b.open).map(renderCurriculumCard);
 
     return vals;
   }
