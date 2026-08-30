@@ -97,6 +97,8 @@
     .cmd-icon-btn{ background:var(--color-surface);border:1px solid var(--color-divider);cursor:pointer;border-radius:10px;
       width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:15px;color:var(--color-text);flex:none; }
     .cmd-icon-btn:hover{ border-color:var(--color-accent);color:var(--color-accent-800); }
+    .cmd-icon-square{ display:block;width:12px;height:12px;border:1.5px solid currentColor;border-radius:2px; }
+    .cmd-icon-sync-sq{ position:absolute;display:block;width:11px;height:11px;border:1.5px solid currentColor;border-radius:2px;background:var(--color-surface); }
 
     /* — tile grip handle: the ONLY drag-start zone, so text elsewhere in the tile
        (title, body content) stays normally selectable/copyable, especially on touch.
@@ -121,7 +123,11 @@
     <nav class="nav" style="flex-wrap:wrap;row-gap:8px">
       <span class="nav-brand">Command</span>
       <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
-        <button class="cmd-icon-btn" title="Notes" onClick="{{ openNotesShortcut }}">📝</button>
+        <button class="cmd-icon-btn" title="Notes" onClick="{{ openNotesShortcut }}"><span class="cmd-icon-square"></span></button>
+        <button class="cmd-icon-btn" title="Sync now" onClick="{{ syncNowIcon }}" style="position:relative">
+          <span class="cmd-icon-sync-sq" style="top:6px;left:6px"></span>
+          <span class="cmd-icon-sync-sq" style="bottom:6px;right:6px"></span>
+        </button>
         <div style="position:relative">
           <button class="btn btn-secondary cmd-tab-btn" style="display:flex;align-items:center;gap:8px" onClick="{{ toggleMoreTabs }}">{{ activeTabLabel }} <span style="display:inline-block;transition:transform .2s ease;{{ moreTabsIconStyle }}">▾</span></button>
           <sc-if value="{{ moreTabsOpen }}" hint-placeholder-val="{{ false }}">
@@ -317,7 +323,7 @@
       <div class="cmd-toast-wrap">
         <sc-for list="{{ dueToasts }}" as="toast" hint-placeholder-count="1">
           <div class="cmd-card cmd-toast">
-            <span class="tag tag-accent" style="flex:none">Reminder</span>
+            <span class="tag tag-accent" style="flex:none">{{ toast.label }}</span>
             <span>{{ toast.text }}</span>
             <button class="cmd-x-btn" onClick="{{ toast.dismiss }}">×</button>
           </div>
@@ -425,6 +431,7 @@ const TAB_BUILTIN_TILES = {
   body: [
     {key:'bTrackers', title:'Trackers', size:'wide'},
     {key:'bGym', title:'Gym consistency', size:'s'},
+    {key:'bTrend', title:'Body trend', size:'large'},
     {key:'bProgram', title:'Weekday workout program', size:'large'},
     {key:'bPr', title:'PR log', size:'wide'}
   ],
@@ -463,6 +470,7 @@ class Component extends DCLogic {
     });
     (data.weeklyTasks||[]).forEach(t=>{ if(t.notes===undefined) t.notes=''; });
     if(!data.finances.barPeriod) data.finances.barPeriod='month';
+    if(!data.finances.incomeLog) data.finances.incomeLog=[];
     if(!data.settings) data.settings={darkMode:false};
     if(data.settings.userName===undefined) data.settings.userName='Alex';
     if(data.updatedAt===undefined) data.updatedAt=0;
@@ -522,7 +530,7 @@ class Component extends DCLogic {
       data, activeTab:'dashboard', viewDate: U.todayKey(),
       uiById:{}, importErrors:{}, habitDetailOpen:false, hideCompleted:false, moreTabsOpen:false,
       modalTab:null, modalId:null, modalFullscreen:false, dragPreviewOrder:null, addBlockMenuOpen:false, dueToasts:[],
-      syncStatus:'idle', syncAt:null,
+      syncStatus:'idle', syncAt:null, syncToast:false,
       pomodoro: {mode:'work', secondsLeft:(props.pomodoroWorkMinutes??25)*60, running:false, cycles:0}
     };
   }
@@ -559,6 +567,7 @@ class Component extends DCLogic {
     if(this._syncPullTimer) clearInterval(this._syncPullTimer);
     if(this._syncVisHandler) document.removeEventListener('visibilitychange', this._syncVisHandler);
     if(this._syncTimer) clearTimeout(this._syncTimer);
+    if(this._syncToastTimer) clearTimeout(this._syncToastTimer);
   }
   checkDueReminders(){
     const now = Date.now();
@@ -664,6 +673,9 @@ class Component extends DCLogic {
   // Most recent logged value carries forward as "current" until a newer day is logged —
   // matches how you'd actually check a portfolio (last known price, not "0 if not logged today").
   latestStockValue(s){ const keys=Object.keys(s.history||{}).sort(); const k=keys[keys.length-1]; return k!==undefined ? Number(s.history[k])||0 : 0; }
+  // Manual PR entry, alongside the auto-logged "top set" PRs recorded from the workout
+  // program — weight and time are both optional so this covers lifts and timed events alike.
+  addCustomPr(name,weight,time){ this.update(d=>{ if(!d.body.prLog[name]) d.body.prLog[name]=[]; d.body.prLog[name].push({date:this.state.viewDate, weight:weight||'', time:time||''}); }); }
 
   getCounterVal(data,day,c){ const v = day.counterValues ? day.counterValues[c.id] : undefined; if(v!==undefined) return v; if(c.id==='water' && day.water!==undefined) return day.water; return 0; }
   setCounterVal(id,val,decimals){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); let nv=Number(val); if(isNaN(nv)) nv=0; if(nv<0)nv=0; day.counterValues[id]= decimals ? Math.round(nv*10)/10 : Math.round(nv); }); }
@@ -735,7 +747,9 @@ class Component extends DCLogic {
     const catTotals = {}; txs.forEach(t=>{ const cat=fin.categories.find(c=>c.id===t.catId); const name=cat?cat.name:'Other'; catTotals[name]=(catTotals[name]||0)+t.amount; });
     Object.keys(catTotals).forEach(name=>push('  '+name+': $'+catTotals[name]));
     push('  Total spent: $'+txs.reduce((a,t)=>a+t.amount,0));
-    push('  Monthly income streams total: $'+fin.incomeStreams.reduce((a,i)=>a+(Number(i.amount)||0),0));
+    const monthPrefixExp = today.slice(0,7);
+    push('  This month\'s income: $'+(fin.incomeLog||[]).filter(e=>e.date.slice(0,7)===monthPrefixExp).reduce((a,e)=>a+(Number(e.amount)||0),0));
+    push('  Lifetime income: $'+(fin.incomeLog||[]).reduce((a,e)=>a+(Number(e.amount)||0),0));
     push('');
 
     push('BIBLE PROGRESS (cumulative)');
@@ -842,6 +856,16 @@ class Component extends DCLogic {
   setSyncGistId(e){ localStorage.setItem('command-sync-gist-id', e.target.value.trim()); this.forceUpdate(); }
   scheduleSync(){ if(this._syncTimer) clearTimeout(this._syncTimer); this._syncTimer = setTimeout(()=>this.pushToGist(), 3000); }
   syncNow(){ this.setState({syncStatus:'syncing'}); this.pullFromGist().then(()=>this.pushToGist()); }
+  // Nav-bar shortcut: same pull-then-push, but gives its own transient feedback since there's
+  // no nearby status line to read (unlike the Settings card's "Synced HH:MM:SS" text).
+  syncNowToast(){
+    this.setState({syncStatus:'syncing'});
+    this.pullFromGist().then(()=>this.pushToGist()).then(()=>{
+      this.setState({syncToast:true});
+      if(this._syncToastTimer) clearTimeout(this._syncToastTimer);
+      this._syncToastTimer = setTimeout(()=>this.setState({syncToast:false}), 1800);
+    });
+  }
   pushToGist(){
     const token = localStorage.getItem('command-sync-token'); if(!token) return Promise.resolve();
     const gistId = localStorage.getItem('command-sync-gist-id');
@@ -1102,21 +1126,29 @@ class Component extends DCLogic {
         this.buildHeatmapMonth(mk, getPct, '230px'))));
   }
 
-  buildBodyTrend(data,heightPx,legend){
+  // Body trend: weight/calories/protein/water, each toggleable and independently normalized
+  // (they're on wildly different scales, unlike the shared-scale stocks chart) across a
+  // chosen range — week (7d), month (30d), or lifetime (every day ever logged).
+  buildBodyTrendGraph(data,heightPx,legend,hiddenIds,range){
     const today = U.todayKey();
-    const days = []; for(let i=29;i>=0;i--) days.push(U.addDays(today,-i));
+    let days;
+    if(range==='week'){ days=[]; for(let i=6;i>=0;i--) days.push(U.addDays(today,-i)); }
+    else if(range==='lifetime'){ days=Object.keys(data.days).sort(); if(!days.length) days=[today]; }
+    else { days=[]; for(let i=29;i>=0;i--) days.push(U.addDays(today,-i)); }
     const H=parseInt(heightPx)||100, padL=6, padR=6, padT=8, padB=8;
     const W=Math.max(240, days.length*(heightPx?6:22));
-    const series = [
-      {label:'Weight', color:'var(--color-accent-900)', getVal:(d)=>{ const v=data.days[d]&&data.days[d].weight; return v!==undefined&&v!=='' ? Number(v) : null; }},
-      {label:'Calories', color:'var(--color-accent-500)', getVal:(d)=>{ const v=data.days[d]&&data.days[d].calories; return v!==undefined&&v!=='' ? Number(v) : null; }},
-      {label:'Water', color:'var(--color-neutral-600)', getVal:(d)=>{ const day=data.days[d]; if(!day) return null; return this.getCounterVal(data,day,{id:'water'}); }}
+    const allSeries = [
+      {id:'weight', label:'Weight', color:'var(--color-accent-900)', getVal:(d)=>{ const v=data.days[d]&&data.days[d].weight; return v!==undefined&&v!=='' ? Number(v) : null; }},
+      {id:'calories', label:'Calories', color:'var(--color-accent-500)', getVal:(d)=>{ const v=data.days[d]&&data.days[d].calories; return v!==undefined&&v!=='' ? Number(v) : null; }},
+      {id:'protein', label:'Protein', color:'var(--color-accent-300)', getVal:(d)=>{ const v=data.days[d]&&data.days[d].protein; return v!==undefined&&v!=='' ? Number(v) : null; }},
+      {id:'water', label:'Water', color:'var(--color-neutral-600)', getVal:(d)=>{ const day=data.days[d]; if(!day) return null; return this.getCounterVal(data,day,{id:'water'}); }}
     ];
+    const series = allSeries.filter(s=>!hiddenIds || !hiddenIds.includes(s.id));
     const lines = series.map((s)=>{
       const raw = days.map(d=>s.getVal(d));
       const vals = raw.filter(v=>v!==null && !isNaN(v));
       const min = vals.length?Math.min(...vals):0, max = vals.length?Math.max(...vals):1;
-      const pts = raw.map((v,i)=>{ if(v===null||isNaN(v)) return null; const norm = max===min?50:(v-min)/(max-min)*100; const x=padL+i*((W-padL-padR)/(days.length-1)); const y=padT+(100-norm)/100*(H-padT-padB); return x.toFixed(1)+','+y.toFixed(1); }).filter(Boolean).join(' ');
+      const pts = raw.map((v,i)=>{ if(v===null||isNaN(v)) return null; const norm = max===min?50:(v-min)/(max-min)*100; const x=padL+i*((W-padL-padR)/(days.length-1||1)); const y=padT+(100-norm)/100*(H-padT-padB); return x.toFixed(1)+','+y.toFixed(1); }).filter(Boolean).join(' ');
       return { label:s.label, color:s.color, pts };
     });
     const svg = E('svg',{viewBox:'0 0 '+W+' '+H,style:{display:'block',width:'100%',height:heightPx||'auto'},preserveAspectRatio:'xMinYMid meet'}, lines.map((l,i)=>E('polyline',{key:i,points:l.pts,fill:'none',stroke:l.color,strokeWidth:2})));
@@ -1329,10 +1361,13 @@ class Component extends DCLogic {
       moreTabsIconStyle: this.state.moreTabsOpen?'transform:rotate(180deg)':'transform:rotate(0deg)',
       activeTabLabel, streakDays: data.streak||1, stopProp: (e)=>e.stopPropagation(),
       openNotesShortcut: ()=>this.setState({activeTab:'resources', modalTab:'resources', modalId:'rScratch', modalFullscreen:false}),
+      syncNowIcon: ()=>this.syncNowToast(),
     };
 
     vals.hideCompleted = this.state.hideCompleted; vals.toggleHideCompleted = ()=>this.setState(s=>({hideCompleted:!s.hideCompleted}));
-    vals.dueToasts = (this.state.dueToasts||[]).map(t=>({id:t.id, text:t.text, dismiss:()=>this.dismissToast(t.id)})); vals.hasToasts = vals.dueToasts.length>0;
+    vals.dueToasts = (this.state.dueToasts||[]).map(t=>({id:t.id, text:t.text, label:'Reminder', dismiss:()=>this.dismissToast(t.id)}));
+    if(this.state.syncToast) vals.dueToasts = vals.dueToasts.concat([{id:'sync-toast', text:'Sync success', label:'Sync', dismiss:()=>this.setState({syncToast:false})}]);
+    vals.hasToasts = vals.dueToasts.length>0;
     const hc = this.state.hideCompleted;
 
     const day0 = this.ensureDayReadonly(data, today);
@@ -1439,15 +1474,28 @@ class Component extends DCLogic {
     vals.categoryOptions = fin.categories.map(c=>({id:c.id,name:c.name}));
     vals.addTransaction = ()=>{ const cat=document.getElementById('txCatDraft').value, amt=document.getElementById('txAmountDraft').value, dt=document.getElementById('txDateDraft').value; if(cat && amt){ this.addListItem(['finances','transactions'],{id:U2.uid(),catId:cat,amount:Number(amt),date: dt||today}); document.getElementById('txAmountDraft').value=''; } };
     vals.transactionsVM = fin.transactions.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,15).map(t=>{ const idx=fin.categories.findIndex(c=>c.id===t.catId); const cat=fin.categories[idx]; return { id:t.id, catName: cat?cat.name:'—', date:t.date, amount:t.amount, dotStyle:{width:'8px',height:'8px',borderRadius:'50%',background:PALETTE[idx%PALETTE.length]||'var(--color-neutral-400)',display:'inline-block'}, remove:()=>this.removeListItem(['finances','transactions'],t.id) }; });
-    vals.incomeVM = fin.incomeStreams.map(inc=>({ id:inc.id, name:inc.name, amount:inc.amount, rename:(e)=>this.renameListItem(['finances','incomeStreams'],inc.id,'name',e.target.value), renameAmount:(e)=>this.renameListItem(['finances','incomeStreams'],inc.id,'amount',Number(e.target.value)), remove:()=>this.removeListItem(['finances','incomeStreams'],inc.id) }));
-    vals.incomeTotal = fin.incomeStreams.reduce((a,b)=>a+(Number(b.amount)||0),0);
-    vals.addIncome = ()=>{ const n=document.getElementById('incNameDraft'), a=document.getElementById('incAmountDraft'); if(n.value.trim()){ this.addListItem(['finances','incomeStreams'],{id:U2.uid(),name:n.value.trim(),amount:Number(a.value)||0}); n.value=''; a.value=''; } };
+    // Income as a dated log (add one entry whenever you get paid — weekly on Sundays works
+    // great) rather than a fixed list of named "monthly streams": rolls up into week/month/
+    // lifetime totals from real entries instead of assuming every stream recurs every month.
+    {
+      const incomeLog = fin.incomeLog||[];
+      const todayKeyIL = U2.todayKey();
+      const weekStartIL = U2.addDays(todayKeyIL,-6);
+      const monthPrefixIL = todayKeyIL.slice(0,7);
+      vals.incomeWeekTotal = incomeLog.filter(e=>e.date>=weekStartIL).reduce((a,e)=>a+(Number(e.amount)||0),0);
+      vals.incomeMonthTotal = incomeLog.filter(e=>e.date.slice(0,7)===monthPrefixIL).reduce((a,e)=>a+(Number(e.amount)||0),0);
+      vals.incomeLifetimeTotal = incomeLog.reduce((a,e)=>a+(Number(e.amount)||0),0);
+      vals.lifetimeSpending = fin.transactions.reduce((a,t)=>a+(Number(t.amount)||0),0);
+      vals.lifetimeNet = (vals.incomeLifetimeTotal - vals.lifetimeSpending).toFixed(2);
+      vals.incomeLogVM = incomeLog.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(e=>({ id:e.id, date:e.date, amount:e.amount, note:e.note||'', remove:()=>this.removeListItem(['finances','incomeLog'],e.id) }));
+      vals.addIncomeLogEntry = ()=>{ const a=document.getElementById('incLogAmountDraft'), n=document.getElementById('incLogNoteDraft'); if(a.value && Number(a.value)){ this.addListItem(['finances','incomeLog'],{id:U2.uid(),date:todayKeyIL,amount:Number(a.value),note:(n.value||'').trim()}); a.value=''; n.value=''; } };
+    }
 
     const barPeriod = fin.barPeriod||'month';
     vals.barPeriodOptions = ['week','month'].map(p=>({ label:p, active: barPeriod===p, select:()=>this.update(d=>{d.finances.barPeriod=p;}) }));
     const barDays = barPeriod==='week'?7:30;
     const barSpendTotal = fin.transactions.filter(t=>t.date>=U2.addDays(today,-barDays)).reduce((a,t)=>a+t.amount,0);
-    const barIncomeTotal = barPeriod==='week' ? Math.round(vals.incomeTotal/4.345) : vals.incomeTotal;
+    const barIncomeTotal = (fin.incomeLog||[]).filter(e=>e.date>=U2.addDays(today,-barDays)).reduce((a,e)=>a+(Number(e.amount)||0),0);
     const barMax = Math.max(barIncomeTotal,barSpendTotal,1);
     vals.barIncome = Math.round(barIncomeTotal); vals.barSpending = Math.round(barSpendTotal);
     vals.incomeBarStyle = { width:'44px', height: Math.max(4,barIncomeTotal/barMax*90)+'px', background:'var(--color-accent-600)' };
@@ -1459,15 +1507,29 @@ class Component extends DCLogic {
     vals.bodyDay = { weight: bodyDayRaw.weight ?? '', calories: bodyDayRaw.calories ?? '', protein: bodyDayRaw.protein ?? '', gym: !!bodyDayRaw.gym,
       setWeight:(e)=>this.update(d=>{this.ensureDay(d,viewDate).weight=e.target.value;}), setCalories:(e)=>this.update(d=>{this.ensureDay(d,viewDate).calories=e.target.value;}), setProtein:(e)=>this.update(d=>{this.ensureDay(d,viewDate).protein=e.target.value;}),
       toggleGym:()=>this.update(d=>{const day=this.ensureDay(d,viewDate); day.gym=!day.gym;}) };
-    const gymHeatmapPct = (key)=>{ const d=data.days[key]; if(!d) return null; return d.gym?100:0; };
+    // Goal is 5 workouts/week, so 2 missed days per (Sunday-start) week are within plan — those
+    // render as plain grey (return null, same as "no data") rather than a red ✕. Only the 3rd+
+    // miss in a week — the one that actually breaks the 5x goal — shows as a real miss.
+    const gymHeatmapPct = (key)=>{
+      const d=data.days[key]; if(!d) return null;
+      if(d.gym) return 100;
+      const dow = new Date(key+'T00:00:00').getDay();
+      let missCount = 0;
+      for(let i=dow;i>=0;i--){ const dk=U.addDays(key,-i); const dd=data.days[dk]; if(dd && !dd.gym) missCount++; }
+      return missCount<=2 ? null : 0;
+    };
     vals.prEnabled = data.body.prEnabled; vals.togglePr = ()=>this.update(d=>{d.body.prEnabled=!d.body.prEnabled;});
+    vals.addCustomPr = ()=>{
+      const n=document.getElementById('prNameDraft'), w=document.getElementById('prWeightDraft'), t=document.getElementById('prTimeDraft');
+      if(n.value.trim()){ this.addCustomPr(n.value.trim(), w.value.trim(), t.value.trim()); n.value=''; w.value=''; t.value=''; }
+    };
     vals.programVM = U2.WORKOUT_DAYS.map(dayName=>({ label:dayName, isToday: dayName===wd, highlightStyle: dayName===wd ? 'box-shadow: inset 0 0 0 2px var(--color-accent);' : '',
       exercises: (data.body.workoutProgram[dayName]||[]).map(ex=>({ name:ex.name, rename:(e)=>this.renameListItem(['body','workoutProgram',dayName],ex.id,'name',e.target.value), remove:()=>this.removeListItem(['body','workoutProgram',dayName],ex.id),
         sets: ex.sets.map((st,si)=>({ reps:st.reps, weight:st.weight, setReps:(e)=>this.update(d=>{d.body.workoutProgram[dayName].find(x=>x.id===ex.id).sets[si].reps=e.target.value;}), setWeight:(e)=>this.update(d=>{d.body.workoutProgram[dayName].find(x=>x.id===ex.id).sets[si].weight=e.target.value;}), remove:()=>this.update(d=>{d.body.workoutProgram[dayName].find(x=>x.id===ex.id).sets.splice(si,1);}) })),
         addSet:()=>this.update(d=>{d.body.workoutProgram[dayName].find(x=>x.id===ex.id).sets.push({reps:'',weight:''});}),
         recordPr:()=>{ const exd = data.body.workoutProgram[dayName].find(x=>x.id===ex.id); const top = exd.sets[exd.sets.length-1]; if(top && top.weight) this.update(d=>{ if(!d.body.prLog[ex.name]) d.body.prLog[ex.name]=[]; d.body.prLog[ex.name].push({date:viewDate, weight:top.weight}); }); } })),
       addExerciseKey:(e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['body','workoutProgram',dayName],{id:U2.uid(),name:e.target.value.trim(),sets:[{reps:'',weight:''}]}); e.target.value=''; } } }));
-    vals.prVM = Object.keys(data.body.prLog).map(name=>({ name, entries: data.body.prLog[name].slice(-6).map(e=>({date:e.date,weight:e.weight})) }));
+    vals.prVM = Object.keys(data.body.prLog).map(name=>({ name, entries: data.body.prLog[name].slice(-6).map(e=>({date:e.date,weight:e.weight,time:e.time})) }));
 
     const curOpts = [{key:'', label:'— no linked curriculum —'}];
     ['stem','bible','civ'].forEach(t=>{ (data.curricula[t]||[]).forEach(c=>curOpts.push({key:t+':'+c.skill_name, label:(t.toUpperCase())+' · '+c.skill_name})); });
@@ -1759,8 +1821,8 @@ class Component extends DCLogic {
               barsEl('100px'), E('p',{style:vals.netStyle},vals.netLabel)) };
         }
         case 'fPie': {
-          return { condensed: E('div',{style:{display:'flex',gap:10,alignItems:'center'}}, E('div',{style:{...vals.pieStyle,width:60,height:60}}),
-              E('div',null, shortList(vals.categoryVM,3,c=>E('div',{key:c.id,style:{display:'flex',alignItems:'center',gap:6,fontSize:11}}, E('span',{style:c.dotStyle}), c.name)))),
+          return { condensed: E('div',{style:{display:'flex',gap:14,alignItems:'center'}}, E('div',{style:{...vals.pieStyle,width:100,height:100}}),
+              E('div',null, shortList(vals.categoryVM,5,c=>E('div',{key:c.id,style:{display:'flex',alignItems:'center',gap:6,fontSize:12,padding:'2px 0'}}, E('span',{style:c.dotStyle}), E('span',null,c.name), E('span',{className:'text-muted',style:{marginLeft:'auto'}},'$'+c.total))))),
             full: E('div',null, E('div',{className:'seg',style:{margin:'8px 0'}}, vals.periodOptions.map(p=>E('label',{key:p.label,className:'seg-opt'}, E('input',{type:'radio',name:'period',checked:p.active,onChange:p.select}), E('span',{className:'dot'}), p.label))),
               E('div',{style:{display:'flex',gap:16,flexWrap:'wrap',alignItems:'center'}}, E('div',{style:vals.pieStyle}),
                 E('div',{style:{minWidth:180}}, vals.categoryVM.map(c=>E('div',{key:c.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}},
@@ -1775,12 +1837,25 @@ class Component extends DCLogic {
                 E('span',{style:tr.dotStyle}), E('span',null,tr.catName), E('span',{className:'text-muted'},tr.date), E('b',{style:{marginLeft:'auto'}},'$'+tr.amount), E('button',{className:'cmd-x-btn',onClick:tr.remove},'×')))) };
         }
         case 'fIncome': {
-          return { condensed: E('div',null, shortList(vals.incomeVM,3,inc=>E('div',{key:inc.id,style:{fontSize:12,display:'flex',justifyContent:'space-between'}}, E('span',null,inc.name), E('span',null,'$'+inc.amount))),
-              E('div',{style:{fontSize:12,fontWeight:600,marginTop:4}},'Total: $'+vals.incomeTotal)),
-            full: E('div',null, vals.incomeVM.map(inc=>E('div',{key:inc.id,style:{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid var(--color-divider)'}},
-                E('input',{className:'cmd-txt',style:{maxWidth:150},defaultValue:inc.name,onBlur:inc.rename}), E('input',{className:'cmd-txt',style:{maxWidth:90},type:'number',defaultValue:inc.amount,onBlur:inc.renameAmount}), E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:inc.remove},'×'))),
-              E('div',{style:{display:'flex',justifyContent:'space-between',paddingTop:8}}, E('b',null,'Total monthly'), E('b',null,'$'+vals.incomeTotal)),
-              E('div',{style:{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}}, E('input',{className:'input',id:'incNameDraft',placeholder:'Stream name'}), E('input',{className:'input',style:{width:110},id:'incAmountDraft',type:'number',placeholder:'Amount'}), E('button',{className:'btn btn-secondary',onClick:vals.addIncome},'Add'))) };
+          const statCol = (label,val)=> E('div',null, E('div',{className:'text-muted',style:{fontSize:11}},label), E('b',{style:{fontSize:14}},'$'+val));
+          return {
+            condensed: E('div',null,
+              E('div',{style:{fontSize:12,display:'flex',justifyContent:'space-between'}}, E('span',null,'This month'), E('b',null,'$'+vals.incomeMonthTotal)),
+              E('div',{style:{fontSize:12,display:'flex',justifyContent:'space-between',marginTop:3}}, E('span',null,'Lifetime'), E('b',null,'$'+vals.incomeLifetimeTotal))),
+            full: E('div',null,
+              E('p',{className:'text-muted',style:{fontSize:11,marginBottom:8}},'Log what comes in whenever you get paid — weekly on Sundays works well — and it rolls up below.'),
+              E('div',{style:{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}},
+                E('input',{className:'input',id:'incLogAmountDraft',type:'number',placeholder:'Amount',style:{width:120}}),
+                E('input',{className:'input',id:'incLogNoteDraft',placeholder:'Note (optional)',style:{flex:1,minWidth:120}}),
+                E('button',{className:'btn btn-secondary',onClick:vals.addIncomeLogEntry},'Add')),
+              E('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,padding:'8px 0',borderTop:'1px solid var(--color-divider)',borderBottom:'1px solid var(--color-divider)',marginBottom:8}},
+                statCol('This week',vals.incomeWeekTotal), statCol('This month',vals.incomeMonthTotal), statCol('Lifetime',vals.incomeLifetimeTotal)),
+              E('div',{style:{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:10}},
+                E('span',{className:'text-muted'},'Lifetime net (income − spending)'),
+                E('b',{style:{color: Number(vals.lifetimeNet)>=0?'var(--color-accent-800)':'#c96a4f'}},'$'+vals.lifetimeNet)),
+              vals.incomeLogVM.length ? vals.incomeLogVM.map(e=>E('div',{key:e.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:'1px solid var(--color-divider)',fontSize:12}},
+                E('span',{className:'text-muted',style:{flex:'none'}},e.date), e.note?E('span',{style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},e.note):null,
+                E('b',{style:{marginLeft:'auto',flex:'none'}},'$'+e.amount), E('button',{className:'cmd-x-btn',onClick:e.remove},'×'))) : E('p',{className:'text-muted',style:{fontSize:12}},'No entries yet.')) };
         }
         case 'fStocks': {
           return { condensed: E('div',null, shortList(vals.stocksVM,3,s=>E('div',{key:s.id,style:{fontSize:12,display:'flex',justifyContent:'space-between'}}, E('span',null,s.symbol), E('span',null,'$'+(s.todayValue===''?'—':s.todayValue)))),
@@ -1873,9 +1948,7 @@ class Component extends DCLogic {
                 E('div',{className:'field'},E('label',null,'Weight (lb)'),E('input',{className:'input',type:'number',defaultValue:vals.bodyDay.weight,onBlur:vals.bodyDay.setWeight})),
                 E('div',{className:'field'},E('label',null,'Calories'),E('input',{className:'input',type:'number',defaultValue:vals.bodyDay.calories,onBlur:vals.bodyDay.setCalories})),
                 E('div',{className:'field'},E('label',null,'Protein (g)'),E('input',{className:'input',type:'number',defaultValue:vals.bodyDay.protein,onBlur:vals.bodyDay.setProtein}))),
-              E('div',{style:{marginTop:12,paddingTop:12,borderTop:'1px solid var(--color-divider)'}}, E('h6',{className:'text-muted',style:{marginBottom:6}},'Weight · calories · water — last 30 days'),
-                E('div',{style:{overflowX:'auto'}}, this.buildBodyTrend(data,'110px'))),
-              E('p',{className:'text-muted',style:{fontSize:12,marginTop:10}},'Water and other counters are managed once in the Counters tile and shown everywhere the same.'),
+              E('p',{className:'text-muted',style:{fontSize:12,marginTop:10}},'See trends over time in the Body trend tile. Water and other counters are managed once in the Counters tile and shown everywhere the same.'),
               vals.countersVM.map(c=>E('div',{key:c.id,style:{display:'flex',alignItems:'center',gap:8,marginTop:4}},
                 E('span',{style:{fontSize:13,minWidth:60}},c.name), E('button',{className:'btn btn-secondary btn-icon',onClick:c.dec},'−'), E('input',{className:'cmd-num',type:'number',step:c.step,defaultValue:c.value,onBlur:c.setValue}), E('button',{className:'btn btn-secondary btn-icon',onClick:c.inc},'+'),
                 E('span',{className:'text-muted',style:{fontSize:12}},'/ '+c.goal+' '+c.unit)))) };
@@ -1885,6 +1958,23 @@ class Component extends DCLogic {
               this.buildHeatmapRecent(gymHeatmapPct, 7)),
             full: E('div',null, E('label',{style:{display:'flex',alignItems:'center',gap:8,margin:'8px 0',cursor:'pointer'}}, E('input',{type:'checkbox',className:'cmd-chk',checked:vals.bodyDay.gym,onChange:vals.bodyDay.toggleGym}),'Went to the gym on '+vals.viewDateLabel),
               E('p',{className:'text-muted',style:{fontSize:11,marginBottom:8}},'Last 6 months — scroll for more'), this.buildHeatmapHistory(gymHeatmapPct, 6)) };
+        }
+        case 'bTrend': {
+          const condH = SIZE_CHART_H[size]||SIZE_CHART_H.wide;
+          const BODY_SERIES = [['weight','Weight','var(--color-accent-900)'],['calories','Calories','var(--color-accent-500)'],['protein','Protein','var(--color-accent-300)'],['water','Water','var(--color-neutral-600)']];
+          const hiddenIds = BODY_SERIES.map(s=>s[0]).filter(id=>this.getUi('bodyVis-'+id,'hidden',false));
+          const range = this.getUi('bodyTrend','range','month');
+          return { condensed: this.buildBodyTrendGraph(data,condH+'px', condH>=SIZE_CHART_H.large, hiddenIds, range),
+            full: E('div',null,
+              E('div',{style:{display:'flex',gap:4,marginBottom:8}}, ['week','month','lifetime'].map(r=>E('button',{key:r,className:'btn '+(range===r?'btn-primary':'btn-secondary'),style:{fontSize:11,padding:'4px 10px'},onClick:()=>this.setUi('bodyTrend','range',r)}, r==='week'?'Weekly':r==='month'?'Monthly':'Lifetime'))),
+              E('div',{style:{display:'flex',gap:16,flexWrap:'wrap',alignItems:'flex-start'}},
+                E('div',{style:{flex:'2 1 260px',minWidth:0}}, this.buildBodyTrendGraph(data,'190px',true,hiddenIds,range)),
+                E('div',{style:{flex:'1 1 120px',minWidth:110}},
+                  E('h6',{className:'text-muted',style:{margin:'0 0 6px',fontSize:11}},'Show'),
+                  BODY_SERIES.map(([id,label,color])=>E('label',{key:id,style:{display:'flex',alignItems:'center',gap:6,fontSize:12,padding:'3px 0',cursor:'pointer'}},
+                    E('input',{type:'checkbox',className:'cmd-chk',style:{width:14,height:14},checked:!hiddenIds.includes(id),onChange:()=>this.toggleUi('bodyVis-'+id,'hidden',false)}),
+                    E('span',{style:{width:10,height:10,borderRadius:2,background:color,display:'inline-block',flex:'none'}}),
+                    label))))) };
         }
         case 'bProgram': {
           const todayProg = vals.programVM.find(p=>p.isToday) || vals.programVM[0];
@@ -1906,8 +1996,15 @@ class Component extends DCLogic {
           return { condensed: E('div',null, E('label',{style:{display:'flex',alignItems:'center',gap:6,fontSize:11}}, E('input',{type:'checkbox',className:'cmd-chk',style:{width:12,height:12},checked:vals.prEnabled,onChange:vals.togglePr}),'enabled'),
               vals.prEnabled ? shortList(vals.prVM,2,pr=>E('div',{key:pr.name,style:{fontSize:12,marginTop:4}}, E('b',null,pr.name),' ', pr.entries.length?E('span',{className:'text-muted'},pr.entries[pr.entries.length-1].weight):null)) : null),
             full: E('div',null, E('label',{style:{display:'flex',alignItems:'center',gap:8,fontSize:13}}, E('input',{type:'checkbox',className:'cmd-chk',checked:vals.prEnabled,onChange:vals.togglePr}),'PR log enabled'),
-              vals.prEnabled ? vals.prVM.map(pr=>E('div',{key:pr.name,style:{marginTop:8}}, E('b',{style:{fontSize:13}},pr.name),
-                E('div',{style:{display:'flex',gap:10,flexWrap:'wrap',fontSize:12,marginTop:4}}, pr.entries.map((e,i)=>E('span',{key:i,className:'tag tag-neutral'},e.date+': '+e.weight))))) : null) };
+              vals.prEnabled ? E('div',null,
+                vals.prVM.map(pr=>E('div',{key:pr.name,style:{marginTop:8}}, E('b',{style:{fontSize:13}},pr.name),
+                  E('div',{style:{display:'flex',gap:10,flexWrap:'wrap',fontSize:12,marginTop:4}}, pr.entries.map((e,i)=>E('span',{key:i,className:'tag tag-neutral'}, e.date+': '+[e.weight?e.weight+' lb':null, e.time?e.time:null].filter(Boolean).join(' · ')))))),
+                E('h6',{className:'text-muted',style:{marginTop:12,marginBottom:6}},'Add a PR'),
+                E('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
+                  E('input',{className:'input',id:'prNameDraft',placeholder:'Name, e.g. Bench Press',style:{flex:'1 1 140px'}}),
+                  E('input',{className:'input',id:'prWeightDraft',placeholder:'Weight (optional)',style:{width:120}}),
+                  E('input',{className:'input',id:'prTimeDraft',placeholder:'Time (optional)',style:{width:110}}),
+                  E('button',{className:'btn btn-secondary',onClick:vals.addCustomPr},'Add'))) : null) };
         }
       }
       return null;
