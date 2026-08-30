@@ -42,7 +42,7 @@
        can't backfill. See layoutTiles() in the script for the packing algorithm. */
     .cmd-grid{ position:relative; }
     .cmd-tile{ background:var(--color-surface);border:1px solid var(--color-divider);border-radius:14px;box-shadow:var(--shadow-sm);padding:10px 12px;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;position:absolute;margin:0; }
-    .cmd-tile-head{ display:flex;align-items:center;gap:4px;cursor:grab;flex:none; }
+    .cmd-tile-head{ display:flex;align-items:center;gap:4px;cursor:grab;flex:none;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none; }
     .cmd-tile-head:active{ cursor:grabbing; }
     .cmd-tile-title{ flex:1;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:color-mix(in srgb, var(--color-text) 65%, transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0; }
     .cmd-tile-actions{ display:flex;align-items:center;gap:0;flex:none; }
@@ -60,6 +60,7 @@
     .cmd-modal{ background:var(--color-bg);border-radius:16px;box-shadow:var(--shadow-lg);width:min(640px,100%);max-height:85vh;display:flex;flex-direction:column;overflow:hidden; }
     .cmd-modal-full{ width:calc(100vw - 32px);max-width:1100px;height:calc(100vh - 32px);max-height:calc(100vh - 32px); }
     .cmd-modal-head{ display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid var(--color-divider);flex:none; }
+    @media (pointer:fine){ .cmd-modal-head{ cursor:move; } }
     .cmd-modal-head-actions{ display:flex;align-items:center;gap:4px;flex:none; }
     .cmd-modal-title{ margin:0;font-size:17px; }
     .cmd-modal-body{ padding:16px;overflow:auto; }
@@ -133,7 +134,7 @@
       <div class="cmd-card cmd-hero">
         <div class="cmd-hero-row1">
           <div>
-            <div class="cmd-hero-greeting">Welcome, Alex</div>
+            <div class="cmd-hero-greeting">Welcome, {{ userName }}</div>
             <div class="cmd-hero-streak">{{ streakDays }}-day login streak</div>
           </div>
           <sc-if value="{{ hasFocus }}" hint-placeholder-val="{{ false }}">
@@ -208,8 +209,25 @@
     <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
       <div style="display:flex;flex-direction:column;gap:var(--cmd-gap);max-width:460px">
         <div class="cmd-card" style="padding:var(--space-4)">
+          <h4 style="margin:0">Profile</h4>
+          <label class="text-muted" style="font-size:12px;display:block;margin-top:10px">Display name</label>
+          <input class="input" style="margin-top:4px" value="{{ userName }}" onChange="{{ setUserName }}" />
+        </div>
+        <div class="cmd-card" style="padding:var(--space-4)">
           <h4 style="margin:0">Appearance</h4>
           <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer"><input type="checkbox" class="cmd-chk" checked="{{ darkMode }}" onChange="{{ toggleDarkMode }}" />Dark mode</label>
+        </div>
+        <div class="cmd-card" style="padding:var(--space-4)">
+          <h4 style="margin:0">Sync across devices</h4>
+          <p class="text-muted" style="font-size:12px;margin-top:4px">Uses a private GitHub Gist as shared storage — free, and reuses your existing GitHub account. Create a token scoped to just "gist" at <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener">github.com/settings/tokens/new</a>, paste it below on this device. On your other device, paste the same token and the Gist ID shown here once this device has synced once.</p>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+            <input class="input" type="password" placeholder="GitHub token (gist scope)" value="{{ syncToken }}" onChange="{{ setSyncToken }}" />
+            <input class="input" placeholder="Gist ID (leave blank on the first device)" value="{{ syncGistId }}" onChange="{{ setSyncGistId }}" />
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <button class="btn btn-secondary" onClick="{{ syncNow }}">Sync now</button>
+              <span class="text-muted" style="font-size:12px">{{ syncStatusLabel }}</span>
+            </div>
+          </div>
         </div>
         <div class="cmd-card" style="padding:var(--space-4)">
           <h4 style="margin:0">Data</h4>
@@ -217,10 +235,16 @@
             <button class="btn btn-secondary" onClick="{{ exportData }}">Export data (JSON)</button>
             <label class="btn btn-secondary" style="cursor:pointer">Import data<input type="file" accept="application/json" style="display:none" onChange="{{ importData }}" /></label>
           </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-            <button class="btn btn-secondary" onClick="{{ exportSummary }}">Export summary (.txt)</button>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:10px">
+            <sc-for list="{{ exportRangeOptions }}" as="r" hint-placeholder-count="4">
+              <button class="{{ r.className }}" style="{{ r.style }}" onClick="{{ r.select }}">{{ r.label }}</button>
+            </sc-for>
           </div>
-          <p class="text-muted" style="font-size:12px;margin-top:6px">A plain-text snapshot — today's tasks, this week's consistency and finances, streaks, chunks, and notes.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <button class="btn btn-secondary" onClick="{{ exportSummary }}">Download .txt</button>
+            <button class="btn btn-secondary" onClick="{{ copySummary }}">{{ copyLabel }}</button>
+          </div>
+          <p class="text-muted" style="font-size:12px;margin-top:6px">A plain-text snapshot for the selected range — tasks, consistency, finances, streaks, chunks, and notes.</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
             <button class="btn btn-secondary" onClick="{{ resetAllData }}">Reset to sample data</button>
             <button class="btn btn-secondary" onClick="{{ deleteSampleData }}">Delete all data (start blank)</button>
@@ -296,7 +320,7 @@
     <sc-if value="{{ modalTile }}" hint-placeholder-val="{{ false }}">
       <div class="cmd-modal-backdrop" onClick="{{ closeModal }}">
         <div class="{{ modalTile.className }}" onClick="{{ stopProp }}">
-          <div class="cmd-modal-head" style="cursor:move" onPointerDown="{{ dragModalStart }}">
+          <div class="cmd-modal-head" onPointerDown="{{ dragModalStart }}">
             <h4 class="cmd-modal-title">{{ modalTile.title }}</h4>
             <div class="cmd-modal-head-actions">
               <button class="cmd-x-btn" title="{{ modalTile.fullscreenTitle }}" onClick="{{ toggleModalFullscreen }}">{{ modalTile.fullscreenIcon }}</button>
@@ -374,7 +398,7 @@ const TAB_BUILTIN_TILES = {
   resources: [
     {key:'rPomodoro', title:'Pomodoro', size:'wide'},
     {key:'rReminders', title:'Reminders', size:'wide'},
-    {key:'rScratch', title:'Scratch pad', size:'wide'},
+    {key:'rScratch', title:'Notes', size:'wide'},
     {key:'rPicker', title:'Random picker', size:'wide'}
   ]
 };
@@ -401,9 +425,18 @@ class Component extends DCLogic {
     (data.weeklyTasks||[]).forEach(t=>{ if(t.notes===undefined) t.notes=''; });
     if(!data.finances.barPeriod) data.finances.barPeriod='month';
     if(!data.settings) data.settings={darkMode:false};
+    if(data.settings.userName===undefined) data.settings.userName='Alex';
+    if(data.updatedAt===undefined) data.updatedAt=0;
     if(data.scratchPad===undefined) data.scratchPad='';
     if(!data.customTabs) data.customTabs=[];
     if(!data.reminders) data.reminders=[];
+    if(!data.noteSections){
+      data.noteSections = [];
+      if(data.scratchPad && data.scratchPad.trim()){
+        data.noteSections.push({id:U.uid(), title:'Notes', collapsed:false,
+          items: data.scratchPad.split('\n').filter(l=>l.trim()).map(l=>({id:U.uid(), text:l.trim(), done:false}))});
+      }
+    }
     if(!data.hiddenTabs) data.hiddenTabs=[];
     if(!data.tabLabelOverrides) data.tabLabelOverrides={};
 
@@ -448,6 +481,7 @@ class Component extends DCLogic {
       data, activeTab:'dashboard', viewDate: U.todayKey(),
       uiById:{}, importErrors:{}, habitDetailOpen:false, hideCompleted:false, moreTabsOpen:false,
       modalTab:null, modalId:null, modalFullscreen:false, dragPreviewOrder:null, addBlockMenuOpen:false, dueToasts:[],
+      syncStatus:'idle', syncAt:null,
       pomodoro: {mode:'work', secondsLeft:(props.pomodoroWorkMinutes??25)*60, running:false, cycles:0}
     };
   }
@@ -470,8 +504,21 @@ class Component extends DCLogic {
     this._resizeHandler = ()=>this.layoutTiles();
     window.addEventListener('resize', this._resizeHandler);
     this.layoutTiles();
+    // Pull once on open, then poll every 30s and whenever the tab regains focus — the local
+    // edit path pushes on its own (see update()), this half only needs to catch remote changes.
+    this.pullFromGist();
+    this._syncPullTimer = setInterval(()=>this.pullFromGist(), 30000);
+    this._syncVisHandler = ()=>{ if(!document.hidden) this.pullFromGist(); };
+    document.addEventListener('visibilitychange', this._syncVisHandler);
   }
-  componentWillUnmount(){ if(this._pomTimer) clearInterval(this._pomTimer); if(this._reminderTimer) clearInterval(this._reminderTimer); if(this._resizeHandler) window.removeEventListener('resize', this._resizeHandler); }
+  componentWillUnmount(){
+    if(this._pomTimer) clearInterval(this._pomTimer);
+    if(this._reminderTimer) clearInterval(this._reminderTimer);
+    if(this._resizeHandler) window.removeEventListener('resize', this._resizeHandler);
+    if(this._syncPullTimer) clearInterval(this._syncPullTimer);
+    if(this._syncVisHandler) document.removeEventListener('visibilitychange', this._syncVisHandler);
+    if(this._syncTimer) clearTimeout(this._syncTimer);
+  }
   checkDueReminders(){
     const now = Date.now();
     const due = (this.state.data.reminders||[]).filter(r=>!r.notified && new Date(r.at).getTime()<=now);
@@ -540,7 +587,7 @@ class Component extends DCLogic {
   componentDidUpdate(){ this.layoutTiles(); }
 
   persist(data){ try{ localStorage.setItem('command-app-data-v1', JSON.stringify(data)); }catch(e){} }
-  update(mutator){ this.setState(s=>{ const data = JSON.parse(JSON.stringify(s.data)); mutator(data); this.persist(data); return {data}; }); }
+  update(mutator){ this.setState(s=>{ const data = JSON.parse(JSON.stringify(s.data)); mutator(data); data.updatedAt = Date.now(); this.persist(data); return {data}; }); this.scheduleSync(); }
 
   getUi(id,key,def){ const u=this.state.uiById[id]; return u && u[key]!==undefined ? u[key] : (def!==undefined?def:false); }
   toggleUi(id,key,def){ this.setState(s=>{ const cur=s.uiById[id]||{}; const curVal = cur[key]!==undefined?cur[key]:(def!==undefined?def:false); return {uiById:{...s.uiById,[id]:{...cur,[key]:!curVal}}}; }); }
@@ -590,41 +637,56 @@ class Component extends DCLogic {
   addJournalEntry(text){ if(!text||!text.trim())return; const now=new Date(); let key=U.todayKey(); if(now.getHours()<6) key=U.addDays(key,-1); this.update(data=>data.journal.unshift({id:U.uid(),dateKey:key,text})); }
   // — plain-text daily snapshot: today's tasks, last-7-days consistency & finances
   //   (clipped to not reach before the app's earliest recorded day), streaks, chunks, notes.
-  buildExportText(){
+  // range: 'yesterday' | 'today' | 'tomorrow' | 'week' (Sunday through today).
+  buildExportText(range){
+    range = range || 'today';
     const data = this.state.data;
     const today = U.todayKey();
-    const wd = U.weekdayOf(today);
-    const day0 = this.ensureDayReadonly(data, today);
     const lines = [];
     const push = (s)=>lines.push(s===undefined?'':s);
-    push('COMMAND — daily export');
+    const RANGE_LABEL = {yesterday:"Yesterday's",today:"Today's",tomorrow:"Tomorrow's",week:"This week's"};
+    push('COMMAND — '+RANGE_LABEL[range]+' export');
     push('Generated: '+new Date().toString());
     push('');
     push('STREAK: '+(data.streak||0)+' day(s)');
     push('');
-    push("TODAY'S TASKS — "+today);
-    data.dailyRecurring.forEach(t=>push('['+(day0.dailyDone[t.id]?'x':' ')+'] '+t.text));
-    data.adHoc.forEach(t=>push('['+(t.done?'x':' ')+'] '+t.text+(t.deadline?' (due '+t.deadline+')':'')));
-    data.weeklyTasks.filter(t=>t.days.includes(wd)).forEach(t=>push('['+(day0.weeklyDone[t.id]?'x':' ')+'] '+t.text+' (weekly)'));
-    push('');
-    push('DAILY CHUNKS');
-    Object.keys(data.chunks).forEach(cn=>{ push(cn+':'); (data.chunks[cn]||[]).forEach(it=>push('  ['+(day0.chunkDone[it.id]?'x':' ')+'] '+it.text)); });
-    push('');
-    push('WEEKDAY SCHEDULE — '+wd);
-    (data.weekdayChunks[wd]||[]).forEach(it=>push('['+(day0.wdChunkDone[it.id]?'x':' ')+'] '+it.text));
-    push('');
 
-    const firstDayKey = Object.keys(data.days).sort()[0];
-    const days = []; for(let i=6;i>=0;i--){ const k=U.addDays(today,-i); if(!firstDayKey || k>=firstDayKey) days.push(k); }
-    push('CONSISTENCY — last '+days.length+' day(s)');
-    days.forEach(k=>{ const d=data.days[k]; if(!d){ push(k+': no data'); return; }
+    let dayKeys;
+    if(range==='week'){
+      const sunOffset = new Date(today+'T00:00:00').getDay();
+      dayKeys = []; for(let i=sunOffset;i>=0;i--) dayKeys.push(U.addDays(today,-i));
+    } else {
+      const off = range==='yesterday'?-1:range==='tomorrow'?1:0;
+      dayKeys = [U.addDays(today,off)];
+    }
+
+    dayKeys.forEach(dayKey=>{
+      const wd = U.weekdayOf(dayKey);
+      const day0 = this.ensureDayReadonly(data, dayKey);
+      push('TASKS — '+dayKey+' ('+wd+')');
+      data.dailyRecurring.forEach(t=>push('  ['+(day0.dailyDone[t.id]?'x':' ')+'] '+t.text));
+      data.adHoc.forEach(t=>push('  ['+(t.done?'x':' ')+'] '+t.text+(t.deadline?' (due '+t.deadline+')':'')));
+      data.weeklyTasks.filter(t=>t.days.includes(wd)).forEach(t=>push('  ['+(day0.weeklyDone[t.id]?'x':' ')+'] '+t.text+' (weekly)'));
+      push('  Daily chunks:');
+      Object.keys(data.chunks).forEach(cn=>{ push('    '+cn+':'); (data.chunks[cn]||[]).forEach(it=>push('      ['+(day0.chunkDone[it.id]?'x':' ')+'] '+it.text)); });
+      push('  Weekday schedule ('+wd+'):');
+      (data.weekdayChunks[wd]||[]).forEach(it=>push('    ['+(day0.wdChunkDone[it.id]?'x':' ')+'] '+it.text));
+      push('');
+    });
+
+    const windowDays = range==='week' ? dayKeys : (()=>{
+      const firstDayKey = Object.keys(data.days).sort()[0];
+      const d=[]; for(let i=6;i>=0;i--){ const k=U.addDays(today,-i); if(!firstDayKey || k>=firstDayKey) d.push(k); } return d;
+    })();
+    push('CONSISTENCY — '+windowDays[0]+' to '+windowDays[windowDays.length-1]);
+    windowDays.forEach(k=>{ const d=data.days[k]; if(!d){ push(k+': no data'); return; }
       const total=data.dailyRecurring.length; const done = total?data.dailyRecurring.filter(t=>d.dailyDone[t.id]).length:0;
       push(k+': '+(total?Math.round(done/total*100)+'% daily tasks':'—')+', gym '+(d.gym?'yes':'no')); });
     push('');
 
     const fin = data.finances;
-    const txs = fin.transactions.filter(t=>days.includes(t.date));
-    push('FINANCES — last '+days.length+' day(s)');
+    const txs = fin.transactions.filter(t=>windowDays.includes(t.date));
+    push('FINANCES — '+windowDays[0]+' to '+windowDays[windowDays.length-1]);
     const catTotals = {}; txs.forEach(t=>{ const cat=fin.categories.find(c=>c.id===t.catId); const name=cat?cat.name:'Other'; catTotals[name]=(catTotals[name]||0)+t.amount; });
     Object.keys(catTotals).forEach(name=>push('  '+name+': $'+catTotals[name]));
     push('  Total spent: $'+txs.reduce((a,t)=>a+t.amount,0));
@@ -639,14 +701,87 @@ class Component extends DCLogic {
 
     push('NOTES');
     Object.keys(data.pinnedNotes||{}).forEach(tk=>{ if(data.pinnedNotes[tk] && data.pinnedNotes[tk].trim()) push('  Pinned ('+tk+'): '+data.pinnedNotes[tk]); });
+    (data.noteSections||[]).forEach(s=>{ push('  '+s.title+':'); s.items.forEach(it=>push('    ['+(it.done?'x':' ')+'] '+it.text)); });
     (data.journal||[]).slice(0,5).forEach(j=>push('  Journal '+j.dateKey+': '+j.text));
     return lines.join('\n');
   }
-  exportSummary(){
-    const blob = new Blob([this.buildExportText()],{type:'text/plain'});
+  exportSummary(range){
+    const blob = new Blob([this.buildExportText(range)],{type:'text/plain'});
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href=url; a.download='command-summary-'+U.todayKey()+'.txt'; a.click();
+    const a = document.createElement('a'); a.href=url; a.download='command-summary-'+range+'-'+U.todayKey()+'.txt'; a.click();
     URL.revokeObjectURL(url);
+  }
+  copySummary(range){
+    const text = this.buildExportText(range);
+    const done = ()=>{ this.setUi('export','copied',true); setTimeout(()=>this.setUi('export','copied',false),1500); };
+    const fail = ()=>{ this.setUi('export','copyFailed',true); setTimeout(()=>this.setUi('export','copyFailed',false),2000); };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(fail);
+      return;
+    }
+    // Fallback for browsers/contexts without the async Clipboard API.
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try{ document.execCommand('copy') ? done() : fail(); } catch(e){ fail(); }
+    document.body.removeChild(ta);
+  }
+
+  // — notes: collapsible sections of checkable items. One-time migration of the old
+  // freeform scratch pad text (one line -> one unchecked item) happens in normalizeData.
+  addNoteSection(title){ if(!title||!title.trim())return; this.update(data=>{ data.noteSections.push({id:U.uid(),title:title.trim(),collapsed:false,items:[]}); }); }
+  removeNoteSection(id){ this.update(data=>{ data.noteSections=data.noteSections.filter(s=>s.id!==id); }); }
+  toggleNoteSection(id){ this.update(data=>{ const s=data.noteSections.find(x=>x.id===id); if(s) s.collapsed=!s.collapsed; }); }
+  renameNoteSection(id,val){ this.update(data=>{ const s=data.noteSections.find(x=>x.id===id); if(s) s.title=val; }); }
+  addNoteItem(sectionId,text){ if(!text||!text.trim())return; this.update(data=>{ const s=data.noteSections.find(x=>x.id===sectionId); if(s) s.items.push({id:U.uid(),text:text.trim(),done:false}); }); }
+  toggleNoteItem(sectionId,itemId){ this.update(data=>{ const s=data.noteSections.find(x=>x.id===sectionId); const it=s&&s.items.find(x=>x.id===itemId); if(it) it.done=!it.done; }); }
+  setNoteItemText(sectionId,itemId,val){ this.update(data=>{ const s=data.noteSections.find(x=>x.id===sectionId); const it=s&&s.items.find(x=>x.id===itemId); if(it) it.text=val; }); }
+  removeNoteItem(sectionId,itemId){ this.update(data=>{ const s=data.noteSections.find(x=>x.id===sectionId); if(s) s.items=s.items.filter(x=>x.id!==itemId); }); }
+
+  setUserName(e){ this.update(data=>{ data.settings.userName = e.target.value; }); }
+
+  // — cross-device sync: a private GitHub Gist holds the whole data blob as one JSON file.
+  // Token/gist id live outside the synced blob (separate localStorage keys) so they never
+  // round-trip through JSON export/import or the synced payload itself.
+  // ponytail: last-write-wins on the whole document, keyed by data.updatedAt — no field-level
+  // merge. Fine for one person's own devices; would need real merge for concurrent offline edits.
+  setSyncToken(e){ localStorage.setItem('command-sync-token', e.target.value); this.forceUpdate(); }
+  setSyncGistId(e){ localStorage.setItem('command-sync-gist-id', e.target.value.trim()); this.forceUpdate(); }
+  scheduleSync(){ if(this._syncTimer) clearTimeout(this._syncTimer); this._syncTimer = setTimeout(()=>this.pushToGist(), 3000); }
+  syncNow(){ this.setState({syncStatus:'syncing'}); this.pullFromGist().then(()=>this.pushToGist()); }
+  pushToGist(){
+    const token = localStorage.getItem('command-sync-token'); if(!token) return Promise.resolve();
+    const gistId = localStorage.getItem('command-sync-gist-id');
+    const body = { description:'Command app data — auto-synced, do not edit manually', files:{ 'command-data.json':{ content: JSON.stringify(this.state.data) } } };
+    this.setState({syncStatus:'syncing'});
+    const req = gistId
+      ? fetch('https://api.github.com/gists/'+gistId, { method:'PATCH', headers:{Authorization:'token '+token,'Content-Type':'application/json'}, body:JSON.stringify(body) })
+      : fetch('https://api.github.com/gists', { method:'POST', headers:{Authorization:'token '+token,'Content-Type':'application/json'}, body:JSON.stringify(Object.assign({public:false},body)) });
+    return req.then(res=>{ if(!res.ok) throw new Error('HTTP '+res.status); return res.json(); })
+      .then(json=>{
+        if(!gistId) localStorage.setItem('command-sync-gist-id', json.id);
+        this.setState({syncStatus:'synced', syncAt:Date.now()});
+      })
+      .catch(()=>{ this.setState({syncStatus:'error'}); });
+  }
+  pullFromGist(){
+    const token = localStorage.getItem('command-sync-token'); const gistId = localStorage.getItem('command-sync-gist-id');
+    if(!token || !gistId) return Promise.resolve();
+    return fetch('https://api.github.com/gists/'+gistId, { headers:{Authorization:'token '+token} })
+      .then(res=>{ if(!res.ok) throw new Error('HTTP '+res.status); return res.json(); })
+      .then(json=>{
+        const file = json.files && json.files['command-data.json'];
+        if(!file || !file.content) { this.setState({syncStatus:'synced', syncAt:Date.now()}); return; }
+        const remote = JSON.parse(file.content);
+        if(remote && (remote.updatedAt||0) > (this.state.data.updatedAt||0)){
+          const normalized = this.normalizeData(remote);
+          this.persist(normalized);
+          this.setState({data:normalized, syncStatus:'synced', syncAt:Date.now()});
+        } else {
+          this.setState({syncStatus:'synced', syncAt:Date.now()});
+        }
+      })
+      .catch(()=>{ this.setState({syncStatus:'error'}); });
   }
   addReminder(text,at){ if(!text||!text.trim()||!at)return; this.update(data=>{ data.reminders.push({id:U.uid(),text:text.trim(),at,notified:false}); data.reminders.sort((a,b)=>a.at.localeCompare(b.at)); }); }
   removeReminder(id){ this.update(data=>{ data.reminders=data.reminders.filter(r=>r.id!==id); }); }
@@ -679,6 +814,9 @@ class Component extends DCLogic {
   // every time it opens (sc-if unmount/remount), so it always starts centered again.
   dragModalStart(e){
     if(e.target.closest('button')) return;
+    // Touch devices drive this via a coarse pointer that already scrolls/selects the page —
+    // dragging the modal there just fights the OS gesture. Desktop only (fine pointer = mouse).
+    if(window.matchMedia && window.matchMedia('(pointer:coarse)').matches) return;
     const modalEl = document.querySelector('.cmd-modal'); if(!modalEl) return;
     const rect = modalEl.getBoundingClientRect();
     const startX = e.clientX, startY = e.clientY, origLeft = rect.left, origTop = rect.top;
@@ -1220,7 +1358,21 @@ class Component extends DCLogic {
         }) };
     });
 
-    vals.scratchPad = data.scratchPad||''; vals.setScratchPad=(e)=>this.update(d=>{d.scratchPad=e.target.value;});
+    vals.noteSectionsVM = (data.noteSections||[]).map(s=>({
+      id:s.id, title:s.title, collapsed:s.collapsed,
+      toggle:()=>this.toggleNoteSection(s.id),
+      rename:(e)=>this.renameNoteSection(s.id,e.target.value),
+      remove:()=>this.removeNoteSection(s.id),
+      doneCount:s.items.filter(i=>i.done).length, totalCount:s.items.length,
+      items:s.items.map(it=>({
+        id:it.id, text:it.text, done:it.done,
+        toggle:()=>this.toggleNoteItem(s.id,it.id),
+        setText:(e)=>this.setNoteItemText(s.id,it.id,e.target.value),
+        remove:()=>this.removeNoteItem(s.id,it.id)
+      })),
+      addItem:()=>{ const el=document.getElementById('noteItemDraft-'+s.id); if(el && el.value.trim()){ this.addNoteItem(s.id, el.value.trim()); el.value=''; } }
+    }));
+    vals.addNoteSection = ()=>{ const el=document.getElementById('noteSectionDraft'); if(el && el.value.trim()){ this.addNoteSection(el.value.trim()); el.value=''; } };
     vals.pickerResult = this.state.pickerResult||'';
     vals.pickRandom = ()=>{ const el=document.getElementById('pickerListDraft'); if(!el) return; const items=(el.value||'').split('\n').map(s=>s.trim()).filter(Boolean); if(!items.length) return; this.setState({pickerResult: items[Math.floor(Math.random()*items.length)]}); };
 
@@ -1230,10 +1382,32 @@ class Component extends DCLogic {
     vals.enableNotifications = ()=>this.requestNotifyPermission();
     vals.addReminderSubmit = ()=>{ const t=document.getElementById('reminderTextDraft'), a=document.getElementById('reminderAtDraft'); if(t.value.trim() && a.value){ this.addReminder(t.value, new Date(a.value).toISOString()); t.value=''; a.value=''; } };
 
+    vals.userName = data.settings.userName || 'Alex';
+    vals.setUserName = (e)=>this.setUserName(e);
     vals.darkMode = !!data.settings.darkMode;
     vals.toggleDarkMode = ()=>this.update(d=>{ d.settings.darkMode=!d.settings.darkMode; });
+
+    vals.syncToken = localStorage.getItem('command-sync-token')||'';
+    vals.syncGistId = localStorage.getItem('command-sync-gist-id')||'';
+    vals.setSyncToken = (e)=>this.setSyncToken(e);
+    vals.setSyncGistId = (e)=>this.setSyncGistId(e);
+    vals.syncNow = ()=>this.syncNow();
+    vals.syncStatusLabel = ({
+      syncing:'Syncing…',
+      synced:'Synced'+(this.state.syncAt?' '+new Date(this.state.syncAt).toLocaleTimeString():''),
+      error:'Sync failed — check the token and try again',
+      idle: vals.syncToken ? 'Not synced yet' : 'Paste a token to enable sync'
+    })[this.state.syncStatus||'idle'];
+
+    const exportRange = this.getUi('export','range','today');
+    vals.exportRangeOptions = [['yesterday','Yesterday'],['today','Today'],['tomorrow','Tomorrow'],['week','This week']].map(([key,label])=>({
+      key, label, className:'btn '+(exportRange===key?'btn-primary':'btn-secondary'), style:'font-size:12px;padding:5px 10px',
+      select:()=>this.setUi('export','range',key)
+    }));
     vals.exportData = ()=>{ const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='command-data.json'; a.click(); URL.revokeObjectURL(url); };
-    vals.exportSummary = ()=>this.exportSummary();
+    vals.exportSummary = ()=>this.exportSummary(exportRange);
+    vals.copySummary = ()=>this.copySummary(exportRange);
+    vals.copyLabel = this.getUi('export','copied',false) ? 'Copied ✓' : this.getUi('export','copyFailed',false) ? 'Copy failed' : 'Copy to clipboard';
     vals.importData = (e)=>{ const file=e.target.files[0]; if(!file) return; const reader=new FileReader(); reader.onload=()=>{ try{ const obj=this.normalizeData(JSON.parse(reader.result)); this.persist(obj); this.setState({data:obj, activeTab:'dashboard', modalTab:null, modalId:null}); }catch(err){ alert('That file is not valid JSON.'); } }; reader.readAsText(file); };
     vals.resetAllData = ()=>{ if(window.confirm('Reset all data back to the sample dataset? This cannot be undone.')){ const fresh=this.normalizeData(U2.sampleData()); this.persist(fresh); this.setState({data:fresh, activeTab:'dashboard', modalTab:null, modalId:null}); } };
     vals.deleteSampleData = ()=>{ if(window.confirm('Delete all data and start blank? This cannot be undone.')){ const fresh=this.normalizeData(U2.blankData()); this.persist(fresh); this.setState({data:fresh, activeTab:'dashboard', modalTab:null, modalId:null}); } };
@@ -1626,9 +1800,32 @@ class Component extends DCLogic {
                 E('input',{className:'input',id:'reminderAtDraft',type:'datetime-local',style:{width:'auto'}}),
                 E('button',{className:'btn btn-secondary',onClick:vals.addReminderSubmit},'Add'))) };
         }
-        case 'rScratch':
-          return { condensed: E('p',{style:{fontSize:12,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:4,WebkitBoxOrient:'vertical'}}, vals.scratchPad||E('span',{className:'text-muted'},'Empty — tap to write.')),
-            full: E('textarea',{className:'input',style:{minHeight:160},placeholder:'Quick notes…',defaultValue:vals.scratchPad,onBlur:vals.setScratchPad}) };
+        case 'rScratch': {
+          const sections = vals.noteSectionsVM;
+          const totalItems = sections.reduce((a,s)=>a+s.totalCount,0);
+          const doneItems = sections.reduce((a,s)=>a+s.doneCount,0);
+          return {
+            condensed: sections.length ? E('p',{style:{fontSize:12}}, sections.length+' section'+(sections.length===1?'':'s')+(totalItems?' · '+doneItems+'/'+totalItems+' done':'')) : E('span',{className:'text-muted',style:{fontSize:12}},'Empty — tap to write.'),
+            full: E('div',null,
+              sections.map(s=>E('div',{key:s.id,style:{borderBottom:'1px solid var(--color-divider)',padding:'6px 0'}},
+                E('div',{style:{display:'flex',alignItems:'center',gap:6,cursor:'pointer'},onClick:s.toggle},
+                  E('span',{style:{color:'var(--color-accent)',fontSize:11,width:12,flex:'none'}}, s.collapsed?'▸':'▾'),
+                  E('input',{className:'cmd-txt',style:{fontWeight:600,fontSize:13},value:s.title,onClick:(e)=>e.stopPropagation(),onChange:s.rename}),
+                  E('span',{className:'text-muted',style:{fontSize:11,flex:'none'}}, s.totalCount?s.doneCount+'/'+s.totalCount:''),
+                  E('button',{className:'cmd-x-btn',onClick:(e)=>{e.stopPropagation();s.remove();}},'×')),
+                s.collapsed ? null : E('div',{style:{marginTop:4,paddingLeft:18}},
+                  s.items.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:6,padding:'2px 0'}},
+                    E('input',{type:'checkbox',className:'cmd-chk',style:{width:14,height:14},checked:it.done,onChange:it.toggle}),
+                    E('input',{className:'cmd-txt',style:{fontSize:12,textDecoration:it.done?'line-through':'none',opacity:it.done?0.55:1},value:it.text,onChange:it.setText}),
+                    E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
+                  E('div',{style:{display:'flex',gap:6,marginTop:4}},
+                    E('input',{className:'input',id:'noteItemDraft-'+s.id,style:{fontSize:12,flex:1},placeholder:'+ item…',onKeyDown:(e)=>{if(e.key==='Enter')s.addItem();}}),
+                    E('button',{className:'btn btn-ghost',style:{fontSize:11},onClick:s.addItem},'Add'))))),
+              E('div',{style:{display:'flex',gap:6,marginTop:10}},
+                E('input',{className:'input',id:'noteSectionDraft',style:{fontSize:12,flex:1},placeholder:'New section title…',onKeyDown:(e)=>{if(e.key==='Enter')vals.addNoteSection();}}),
+                E('button',{className:'btn btn-secondary',style:{fontSize:12},onClick:vals.addNoteSection},'+ Section')))
+          };
+        }
         case 'rPicker':
           return { condensed: vals.pickerResult ? E('p',{style:{fontFamily:'var(--font-heading)',fontSize:16}},vals.pickerResult) : E('p',{className:'text-muted',style:{fontSize:12}},'Tap to pick from a list.'),
             full: E('div',null, E('textarea',{className:'input',placeholder:'One option per line…',id:'pickerListDraft'}),
