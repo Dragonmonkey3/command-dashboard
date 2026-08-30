@@ -99,11 +99,14 @@
     .cmd-icon-btn:hover{ border-color:var(--color-accent);color:var(--color-accent-800); }
 
     /* — tile grip handle: the ONLY drag-start zone, so text elsewhere in the tile
-       (title, body content) stays normally selectable/copyable, especially on touch. */
-    .cmd-grip{ display:flex;flex-direction:column;flex-wrap:wrap;gap:2px;width:9px;height:13px;flex:none;opacity:.35;cursor:grab;
-      touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;padding:6px; }
+       (title, body content) stays normally selectable/copyable, especially on touch.
+       The touch target is enlarged via an invisible ::before slop area rather than
+       padding, so it can't shrink the 9x13 dot-grid content box under border-box sizing. */
+    .cmd-grip{ position:relative;display:flex;flex-direction:column;flex-wrap:wrap;gap:2px;width:9px;height:13px;flex:none;opacity:.35;cursor:grab;
+      touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none; }
+    .cmd-grip::before{ content:'';position:absolute;inset:-8px; }
     .cmd-grip:active{ cursor:grabbing; }
-    .cmd-grip span{ width:3px;height:3px;border-radius:50%;background:currentColor; }
+    .cmd-grip span{ width:3px;height:3px;border-radius:50%;background:currentColor;flex:none; }
     .cmd-tile-head:hover .cmd-grip{ opacity:.75; }
     .cmd-tile-dragging{ opacity:.45 !important;box-shadow:none !important;cursor:grabbing; }
 
@@ -362,16 +365,29 @@ const SIZE_CHART_H = { s:70, wide:90, large:160, full:170 };
 // with just a floor per size so a sparse "large" tile doesn't collapse to sliver-small.
 const TILE_DIMS = { s:{w:1,minH:88}, wide:{w:2,minH:88}, large:{w:2,minH:170}, full:{w:4,minH:110} };
 
-// Extra-task priority: urgent always floats to the top; everything else sorts by whichever
-// date/time it resolves to (an exact pick, or the end of its bucket) — soonest first. A task
-// with neither an urgency bucket nor an exact date/time sinks to the bottom.
+// Extra-task priority: urgent always floats to the top; everything else sorts into discrete
+// tiers (today < this week < this month < future) so a bucket never jumps another bucket just
+// because a literal date happens to overlap near a month boundary — e.g. "this week" can span
+// past the end of "this month" in the last days of a month, but should still rank sooner. An
+// exact date/time is placed into whichever tier it naturally falls in, then sorted true-chronologically
+// within that tier so it interleaves sensibly with the bucketed items around it.
 function urgencyMeta(task, todayKey){
   if(task.urgency==='urgent') return {rank:0, sortKey:-Infinity, label:'Urgent'};
-  if(task.dueAt){ const t=new Date(task.dueAt).getTime(); return {rank:1, sortKey:isNaN(t)?Infinity:t, label:new Date(task.dueAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}; }
-  if(task.urgency==='today') return {rank:1, sortKey:new Date(todayKey+'T23:59:59').getTime(), label:'Today'};
-  if(task.urgency==='week') return {rank:1, sortKey:new Date(U.addDays(todayKey,6)+'T23:59:59').getTime(), label:'This week'};
-  if(task.urgency==='month'){ const d=new Date(todayKey+'T00:00:00'); const end=new Date(d.getFullYear(),d.getMonth()+1,0,23,59,59); return {rank:1, sortKey:end.getTime(), label:'This month'}; }
-  return {rank:2, sortKey:Infinity, label: task.urgency==='future' ? 'Future' : ''};
+  const todayEnd = new Date(todayKey+'T23:59:59').getTime();
+  const weekEnd = new Date(U.addDays(todayKey,6)+'T23:59:59').getTime();
+  const d0 = new Date(todayKey+'T00:00:00');
+  const monthEnd = new Date(d0.getFullYear(),d0.getMonth()+1,0,23,59,59).getTime();
+  const tierFor = (ts)=> ts<=todayEnd ? 1 : ts<=weekEnd ? 2 : ts<=monthEnd ? 3 : 4;
+  if(task.dueAt){
+    const t=new Date(task.dueAt).getTime();
+    if(isNaN(t)) return {rank:5, sortKey:Infinity, label:''};
+    return {rank:tierFor(t), sortKey:t, label:new Date(task.dueAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})};
+  }
+  if(task.urgency==='today') return {rank:1, sortKey:todayEnd, label:'Today'};
+  if(task.urgency==='week') return {rank:2, sortKey:weekEnd, label:'This week'};
+  if(task.urgency==='month') return {rank:3, sortKey:monthEnd, label:'This month'};
+  if(task.urgency==='future') return {rank:4, sortKey:Infinity, label:'Future'};
+  return {rank:5, sortKey:Infinity, label:''};
 }
 
 function curriculumTiles(prefix,label){
@@ -396,7 +412,9 @@ const TAB_BUILTIN_TILES = {
   finances: [
     {key:'fBar', title:'Income vs. spending', size:'wide'},
     {key:'fPie', title:'Spending by category', size:'large'},
-    {key:'fIncome', title:'Income streams', size:'wide'}
+    {key:'fIncome', title:'Income streams', size:'wide'},
+    {key:'fStocks', title:'Stocks', size:'wide'},
+    {key:'fStocksGraph', title:'Stocks value', size:'large'}
   ],
   daily: [
     {key:'dayDevotion', title:'Devotion', size:'large'},
@@ -452,6 +470,7 @@ class Component extends DCLogic {
     if(!data.customTabs) data.customTabs=[];
     if(!data.reminders) data.reminders=[];
     if(!data.pinnedNoteSections) data.pinnedNoteSections={};
+    if(!data.stocks) data.stocks=[];
     if(!data.noteSections){
       data.noteSections = [];
       if(data.scratchPad && data.scratchPad.trim()){
@@ -641,6 +660,10 @@ class Component extends DCLogic {
   toggleWdChunkDone(id){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.wdChunkDone[id]=!day.wdChunkDone[id]; }); }
   setHabitValue(id,value){ this.update(data=>{ const h=data.habits.find(x=>x.id===id); if(h) h.history[this.state.viewDate]=Number(value)||0; }); }
   logHabitDelta(id,delta){ this.update(data=>{ const h=data.habits.find(x=>x.id===id); if(!h) return; const cur=h.history[this.state.viewDate]||0; h.history[this.state.viewDate]=Math.max(0,Math.round((cur+delta)*10)/10); }); }
+  setStockValue(id,value){ this.update(data=>{ const s=data.stocks.find(x=>x.id===id); if(s) s.history[this.state.viewDate]=Number(value)||0; }); }
+  // Most recent logged value carries forward as "current" until a newer day is logged —
+  // matches how you'd actually check a portfolio (last known price, not "0 if not logged today").
+  latestStockValue(s){ const keys=Object.keys(s.history||{}).sort(); const k=keys[keys.length-1]; return k!==undefined ? Number(s.history[k])||0 : 0; }
 
   getCounterVal(data,day,c){ const v = day.counterValues ? day.counterValues[c.id] : undefined; if(v!==undefined) return v; if(c.id==='water' && day.water!==undefined) return day.water; return 0; }
   setCounterVal(id,val,decimals){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); let nv=Number(val); if(isNaN(nv)) nv=0; if(nv<0)nv=0; day.counterValues[id]= decimals ? Math.round(nv*10)/10 : Math.round(nv); }); }
@@ -1122,6 +1145,34 @@ class Component extends DCLogic {
     return E('div',null, svg, legendEl);
   }
 
+  // Unlike buildHabitGraph, every line shares ONE min/max (rather than each series normalizing
+  // to its own range) — dollar values only mean something plotted on a common scale, otherwise
+  // a $50 stock and a $2000 stock would render as the same size line and the average would be
+  // meaningless next to them. The average is computed from ALL stocks regardless of hiddenIds,
+  // so hiding a line to declutter the chart never shifts what the average line represents.
+  buildStocksGraph(data,heightPx,legend,hiddenIds){
+    const today = U.todayKey();
+    const days = []; for(let i=29;i>=0;i--) days.push(U.addDays(today,-i));
+    const H=parseInt(heightPx)||100, padL=6, padR=6, padT=8, padB=8;
+    const W=Math.max(240, days.length*(heightPx?6:22));
+    const allStocks = data.stocks||[];
+    const visible = allStocks.filter(s=>!hiddenIds || !hiddenIds.includes(s.id));
+    const rawFor = (s)=> days.map(d=> s.history[d]!==undefined && s.history[d]!=='' ? Number(s.history[d]) : null);
+    const avgRaw = days.map((d,i)=>{
+      const vals = allStocks.map(s=>rawFor(s)[i]).filter(v=>v!==null && !isNaN(v));
+      return vals.length ? vals.reduce((a,v)=>a+v,0)/vals.length : null;
+    });
+    const allVals = visible.flatMap(s=>rawFor(s)).concat(avgRaw).filter(v=>v!==null && !isNaN(v));
+    const min = allVals.length?Math.min(...allVals):0, max = allVals.length?Math.max(...allVals):1;
+    const toPts = (raw)=> raw.map((v,i)=>{ if(v===null||isNaN(v)) return null; const norm = max===min?50:(v-min)/(max-min)*100; const x=padL+i*((W-padL-padR)/(days.length-1)); const y=padT+(100-norm)/100*(H-padT-padB); return x.toFixed(1)+','+y.toFixed(1); }).filter(Boolean).join(' ');
+    const lines = visible.map((s,idx)=>({ name:s.symbol, color:HABIT_COLORS[idx%HABIT_COLORS.length], dash:'0', pts:toPts(rawFor(s)) }));
+    if(allStocks.length) lines.push({ name:'Average', color:'var(--color-neutral-700)', dash:'4 3', pts:toPts(avgRaw) });
+    const svg = E('svg',{viewBox:'0 0 '+W+' '+H,style:{display:'block',width:'100%',height:heightPx||'auto'},preserveAspectRatio:'xMinYMid meet'}, lines.map((l,i)=>E('polyline',{key:i,points:l.pts,fill:'none',stroke:l.color,strokeWidth:l.name==='Average'?1.5:2,strokeDasharray:l.dash})));
+    if(legend===false) return svg;
+    const legendEl = E('div',{style:{display:'flex',gap:'12px',flexWrap:'wrap',marginTop:'6px'}}, lines.map((l,i)=>E('div',{key:i,style:{display:'flex',alignItems:'center',gap:'5px',fontSize:'11px'}}, E('span',{style:{width:'14px',height:'2px',background:l.color,display:'inline-block'}}), l.name)));
+    return E('div',null, svg, legendEl);
+  }
+
   buildSkillTree(mod, tab, ci, mi){
     const nodes = mod.tree_nodes||[];
     const depthCache = {};
@@ -1290,6 +1341,7 @@ class Component extends DCLogic {
     data.weeklyTasks.filter(t=>t.days.includes(wd)).forEach(t=>{ totalCount++; if(day0.weeklyDone[t.id]) doneCount++; });
     (data.weekdayChunks[wd]||[]).forEach(t=>{ totalCount++; if(day0.wdChunkDone[t.id]) doneCount++; });
     Object.keys(data.chunks).forEach(cn=>data.chunks[cn].forEach(it=>{ totalCount++; if(day0.chunkDone[it.id]) doneCount++; }));
+    data.adHoc.forEach(t=>{ const dueToday = t.urgency==='today' || (t.dueAt && t.dueAt.slice(0,10)===today); if(dueToday){ totalCount++; if(t.done) doneCount++; } });
     vals.todayDoneCount = doneCount; vals.todayTotalCount = totalCount;
     vals.todayProgressPct = totalCount?Math.round(doneCount/totalCount*100):0;
     vals.todayProgressBarStyle = { width: vals.todayProgressPct+'%' };
@@ -1367,6 +1419,11 @@ class Component extends DCLogic {
 
     vals.habitsVM = data.habits.map(h=>({ id:h.id, name:h.name, direction:h.direction, todayValue: h.history[viewDate]!==undefined?h.history[viewDate]:0, inc:()=>this.logHabitDelta(h.id,1), dec:()=>this.logHabitDelta(h.id,-1), setValue:(e)=>this.setHabitValue(h.id,e.target.value), rename:(e)=>this.renameListItem(['habits'],h.id,'name',e.target.value), remove:()=>this.removeListItem(['habits'],h.id) }));
     vals.addHabit = ()=>{ const n=document.getElementById('habitNameDraft'), d=document.getElementById('habitDirDraft'); if(n.value.trim()){ this.addListItem(['habits'],{id:U2.uid(),name:n.value.trim(),direction:d.value,history:{}}); n.value=''; } };
+
+    vals.stocksVM = data.stocks.map(s=>({ id:s.id, symbol:s.symbol, todayValue: s.history[viewDate]!==undefined?s.history[viewDate]:'',
+      setValue:(e)=>this.setStockValue(s.id,e.target.value), rename:(e)=>this.renameListItem(['stocks'],s.id,'symbol',e.target.value.toUpperCase()), remove:()=>this.removeListItem(['stocks'],s.id) }));
+    vals.addStock = ()=>{ const el=document.getElementById('stockSymbolDraft'); if(el && el.value.trim()){ this.addListItem(['stocks'],{id:U2.uid(),symbol:el.value.trim().toUpperCase(),history:{}}); el.value=''; } };
+    vals.stocksTotalValue = data.stocks.reduce((a,s)=>a+this.latestStockValue(s),0).toFixed(2);
 
     const fin = data.finances;
     const periodFilter = (t)=>{ if(fin.period==='lifetime') return true; const days = fin.period==='weekly'?7:30; return t.date >= U2.addDays(today,-days); };
@@ -1566,27 +1623,44 @@ class Component extends DCLogic {
     const buildBuiltinTileContent = (id, size)=>{
       switch(id){
         case 'dTodo': {
-          const items = vals.dailyRecurringVM.concat(vals.adHocVM);
-          const doneN = items.filter(i=>i.done).length;
-          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--color-accent-800)',marginBottom:4}}, doneN+'/'+items.length+' done'),
-              shortList(items,3,it=>rowLine(it.id,it.text,it.done))),
+          const recurring = vals.dailyRecurringVM, extra = vals.adHocVM;
+          const doneN = recurring.filter(i=>i.done).length + extra.filter(i=>i.done).length;
+          const totalN = recurring.length + extra.length;
+          const colHead = (label)=> E('h6',{className:'text-muted',style:{margin:'0 0 5px',fontSize:10,textTransform:'uppercase',letterSpacing:'.04em'}}, label);
+          const urgTag = (it)=> it.urgencyLabel ? E('span',{className:'tag',style:{fontSize:9,padding:'1px 5px',flex:'none',background:it.urgency==='urgent'?'#c96a4f':undefined,color:it.urgency==='urgent'?'#fff':undefined}}, it.urgencyLabel) : null;
+          const miniRow = (it)=> E('label',{key:it.id,style:{display:'flex',alignItems:'center',gap:6,padding:'2px 0',fontSize:12,cursor:'pointer'},onClick:(e)=>e.stopPropagation()},
+            E('input',{type:'checkbox',className:'cmd-chk',style:{width:13,height:13,flex:'none'},checked:it.done,onChange:it.toggle}),
+            E('span',{style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',textDecoration:it.done?'line-through':'none',opacity:it.done?0.55:1,flex:1,minWidth:0}}, it.text),
+            urgTag(it));
+          return {
+            condensed: E('div',null,
+              E('div',{style:{fontSize:12,color:'var(--color-accent-800)',marginBottom:6}}, doneN+'/'+totalN+' done'),
+              E('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}},
+                E('div',null, colHead('Extra tasks'), extra.length ? extra.slice(0,5).map(miniRow) : E('p',{className:'text-muted',style:{fontSize:11}},'None')),
+                E('div',null, colHead('Daily'), recurring.length ? recurring.slice(0,5).map(miniRow) : E('p',{className:'text-muted',style:{fontSize:11}},'None')))),
             full: E('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}},
-              E('div',null, E('h6',{className:'text-muted',style:{marginBottom:8}},'Daily recurring'),
-                vals.dailyRecurringVM.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}},
-                  E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,onChange:it.toggle}), E('input',{className:'cmd-txt',defaultValue:it.text,onBlur:it.rename}), E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
-                E('input',{className:'input',style:{marginTop:8},placeholder:'Add recurring task, press Enter',onKeyDown:vals.addDailyRecurringKey})),
-              E('div',null, E('h6',{className:'text-muted',style:{marginBottom:8}},'Extra tasks'),
-                vals.adHocVM.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:6,padding:'5px 0',flexWrap:'wrap',borderBottom:'1px solid var(--color-divider)'}},
-                  E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,onChange:it.toggle}),
-                  E('input',{className:'cmd-txt',style:{flex:1,minWidth:90},defaultValue:it.text,onBlur:it.rename}),
-                  it.urgencyLabel ? E('span',{className:'tag',style:{fontSize:10,flex:'none',background:it.urgency==='urgent'?'#c96a4f':undefined,color:it.urgency==='urgent'?'#fff':undefined}}, it.urgencyLabel) : null,
-                  E('button',{className:'cmd-x-btn',onClick:it.remove},'×'),
-                  E('div',{style:{display:'flex',gap:6,width:'100%',marginTop:2}},
-                    E('select',{className:'input',style:{width:'auto',fontSize:11,padding:'3px 4px'},value:it.urgency,onChange:it.setUrgency},
-                      E('option',{value:''},'No date'), E('option',{value:'urgent'},'Urgent'), E('option',{value:'today'},'Today'),
-                      E('option',{value:'week'},'This week'), E('option',{value:'month'},'This month'), E('option',{value:'future'},'Future')),
-                    E('input',{className:'input',style:{flex:1,fontSize:11},type:'datetime-local',value:it.dueAt,onChange:it.setDueAt,title:'Or pick an exact date & time'})))),
-                E('input',{className:'input',style:{marginTop:8},placeholder:'Add a task, press Enter',onKeyDown:vals.addAdHocKey}))) };
+              E('div',null, colHead('Extra tasks'),
+                extra.map(it=>{
+                  const open = this.getUi('adhoc-'+it.id,'open',false);
+                  return E('div',{key:it.id,style:{padding:'5px 0',borderBottom:'1px solid var(--color-divider)'}},
+                    E('div',{style:{display:'flex',alignItems:'center',gap:6}},
+                      E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,onChange:it.toggle}),
+                      E('input',{className:'cmd-txt',style:{flex:1,minWidth:60,fontSize:13},defaultValue:it.text,onBlur:it.rename}),
+                      urgTag(it),
+                      E('button',{className:'cmd-x-btn',style:{fontSize:11,flex:'none'},title:'Set urgency / date',onClick:()=>this.toggleUi('adhoc-'+it.id,'open',false)}, open?'▾':'▸'),
+                      E('button',{className:'cmd-x-btn',onClick:it.remove},'×')),
+                    open ? E('div',{style:{display:'flex',gap:6,marginTop:5,paddingLeft:22,flexWrap:'wrap'}},
+                      E('select',{className:'input',style:{width:'auto',fontSize:11,padding:'3px 4px'},value:it.urgency,onChange:it.setUrgency},
+                        E('option',{value:''},'No date'), E('option',{value:'urgent'},'Urgent'), E('option',{value:'today'},'Today'),
+                        E('option',{value:'week'},'This week'), E('option',{value:'month'},'This month'), E('option',{value:'future'},'Future')),
+                      E('input',{className:'input',style:{flex:1,minWidth:140,fontSize:11},type:'datetime-local',value:it.dueAt,onChange:it.setDueAt,title:'Or pick an exact date & time'})) : null);
+                }),
+                E('input',{className:'input',style:{marginTop:8,fontSize:12},placeholder:'Add a task, press Enter',onKeyDown:vals.addAdHocKey})),
+              E('div',null, colHead('Daily recurring'),
+                recurring.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}},
+                  E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,onChange:it.toggle}), E('input',{className:'cmd-txt',style:{fontSize:13},defaultValue:it.text,onBlur:it.rename}), E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
+                E('input',{className:'input',style:{marginTop:8,fontSize:12},placeholder:'Add recurring task, press Enter',onKeyDown:vals.addDailyRecurringKey})))
+          };
         }
         case 'dWeekdayChunks': {
           const todayWc = vals.weekdayChunksVM.find(w=>!w.notToday);
@@ -1707,6 +1781,34 @@ class Component extends DCLogic {
                 E('input',{className:'cmd-txt',style:{maxWidth:150},defaultValue:inc.name,onBlur:inc.rename}), E('input',{className:'cmd-txt',style:{maxWidth:90},type:'number',defaultValue:inc.amount,onBlur:inc.renameAmount}), E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:inc.remove},'×'))),
               E('div',{style:{display:'flex',justifyContent:'space-between',paddingTop:8}}, E('b',null,'Total monthly'), E('b',null,'$'+vals.incomeTotal)),
               E('div',{style:{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}}, E('input',{className:'input',id:'incNameDraft',placeholder:'Stream name'}), E('input',{className:'input',style:{width:110},id:'incAmountDraft',type:'number',placeholder:'Amount'}), E('button',{className:'btn btn-secondary',onClick:vals.addIncome},'Add'))) };
+        }
+        case 'fStocks': {
+          return { condensed: E('div',null, shortList(vals.stocksVM,3,s=>E('div',{key:s.id,style:{fontSize:12,display:'flex',justifyContent:'space-between'}}, E('span',null,s.symbol), E('span',null,'$'+(s.todayValue===''?'—':s.todayValue)))),
+              E('div',{style:{fontSize:12,fontWeight:600,marginTop:4}},'Total: $'+vals.stocksTotalValue)),
+            full: E('div',null,
+              E('p',{className:'text-muted',style:{fontSize:11,marginBottom:6}},'Log each stock\'s value for '+vals.viewDateLabel+' — the graph tile plots these over time.'),
+              vals.stocksVM.map(s=>E('div',{key:s.id,style:{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid var(--color-divider)'}},
+                E('input',{className:'cmd-txt',style:{maxWidth:90,fontWeight:600},defaultValue:s.symbol,onBlur:s.rename}),
+                E('span',{className:'text-muted',style:{fontSize:12}},'$'),
+                E('input',{className:'cmd-num',style:{width:90},type:'number',defaultValue:s.todayValue,onBlur:s.setValue}),
+                E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:s.remove},'×'))),
+              E('div',{style:{display:'flex',justifyContent:'space-between',paddingTop:8}}, E('b',null,'Total value'), E('b',null,'$'+vals.stocksTotalValue)),
+              E('div',{style:{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}}, E('input',{className:'input',id:'stockSymbolDraft',placeholder:'Ticker, e.g. AAPL',style:{width:140}}), E('button',{className:'btn btn-secondary',onClick:vals.addStock},'Add'))) };
+        }
+        case 'fStocksGraph': {
+          const condH = SIZE_CHART_H[size]||SIZE_CHART_H.wide;
+          const hiddenIds = data.stocks.filter(s=>this.getUi('stockVis-'+s.id,'hidden',false)).map(s=>s.id);
+          return { condensed: this.buildStocksGraph(data,condH+'px', condH>=SIZE_CHART_H.large, hiddenIds),
+            full: E('div',null,
+              E('div',{style:{display:'flex',gap:16,flexWrap:'wrap',alignItems:'flex-start'}},
+                E('div',{style:{flex:'2 1 260px',minWidth:0}}, this.buildStocksGraph(data,'190px',true,hiddenIds)),
+                E('div',{style:{flex:'1 1 120px',minWidth:110}},
+                  E('h6',{className:'text-muted',style:{margin:'0 0 6px',fontSize:11}},'Show'),
+                  data.stocks.map((s,idx)=>E('label',{key:s.id,style:{display:'flex',alignItems:'center',gap:6,fontSize:12,padding:'3px 0',cursor:'pointer'}},
+                    E('input',{type:'checkbox',className:'cmd-chk',style:{width:14,height:14},checked:!hiddenIds.includes(s.id),onChange:()=>this.toggleUi('stockVis-'+s.id,'hidden',false)}),
+                    E('span',{style:{width:10,height:10,borderRadius:2,background:HABIT_COLORS[idx%HABIT_COLORS.length],display:'inline-block',flex:'none'}}),
+                    s.symbol)))),
+              E('p',{className:'text-muted',style:{fontSize:11,marginTop:6}},'Dashed line = average across all your stocks. Total value: $'+vals.stocksTotalValue)) };
         }
         case 'dayDevotion': {
           const met = devoMetCount(todayDevo);
