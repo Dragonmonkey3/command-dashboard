@@ -42,8 +42,7 @@
        can't backfill. See layoutTiles() in the script for the packing algorithm. */
     .cmd-grid{ position:relative; }
     .cmd-tile{ background:var(--color-surface);border:1px solid var(--color-divider);border-radius:14px;box-shadow:var(--shadow-sm);padding:10px 12px;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;position:absolute;margin:0; }
-    .cmd-tile-head{ display:flex;align-items:center;gap:4px;cursor:grab;flex:none;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none; }
-    .cmd-tile-head:active{ cursor:grabbing; }
+    .cmd-tile-head{ display:flex;align-items:center;gap:4px;flex:none; }
     .cmd-tile-title{ flex:1;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:color-mix(in srgb, var(--color-text) 65%, transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0; }
     .cmd-tile-actions{ display:flex;align-items:center;gap:0;flex:none; }
     .cmd-size-pop{ position:relative; }
@@ -99,8 +98,11 @@
       width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:15px;color:var(--color-text);flex:none; }
     .cmd-icon-btn:hover{ border-color:var(--color-accent);color:var(--color-accent-800); }
 
-    /* — tile grip handle — */
-    .cmd-grip{ display:flex;flex-direction:column;flex-wrap:wrap;gap:2px;width:9px;height:13px;flex:none;opacity:.35;cursor:grab; }
+    /* — tile grip handle: the ONLY drag-start zone, so text elsewhere in the tile
+       (title, body content) stays normally selectable/copyable, especially on touch. */
+    .cmd-grip{ display:flex;flex-direction:column;flex-wrap:wrap;gap:2px;width:9px;height:13px;flex:none;opacity:.35;cursor:grab;
+      touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;padding:6px; }
+    .cmd-grip:active{ cursor:grabbing; }
     .cmd-grip span{ width:3px;height:3px;border-radius:50%;background:currentColor; }
     .cmd-tile-head:hover .cmd-grip{ opacity:.75; }
     .cmd-tile-dragging{ opacity:.45 !important;box-shadow:none !important;cursor:grabbing; }
@@ -115,15 +117,18 @@
   <div style="position:sticky;top:0;z-index:30;background:var(--color-bg);border-bottom:1px solid var(--color-divider)">
     <nav class="nav" style="flex-wrap:wrap;row-gap:8px">
       <span class="nav-brand">Command</span>
-      <div style="position:relative;margin-left:auto">
-        <button class="btn btn-secondary cmd-tab-btn" style="display:flex;align-items:center;gap:8px" onClick="{{ toggleMoreTabs }}">{{ activeTabLabel }} <span style="display:inline-block;transition:transform .2s ease;{{ moreTabsIconStyle }}">▾</span></button>
-        <sc-if value="{{ moreTabsOpen }}" hint-placeholder-val="{{ false }}">
-          <div class="cmd-card" style="position:absolute;right:0;top:calc(100% + 6px);min-width:200px;z-index:40;padding:6px;display:flex;flex-direction:column;gap:2px;box-shadow:var(--shadow-lg)">
-            <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="9">
-              <button class="btn btn-ghost cmd-tab-btn" style="{{ t.menuStyle }}" onClick="{{ t.selectAndClose }}">{{ t.label }}</button>
-            </sc-for>
-          </div>
-        </sc-if>
+      <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
+        <button class="cmd-icon-btn" title="Notes" onClick="{{ openNotesShortcut }}">📝</button>
+        <div style="position:relative">
+          <button class="btn btn-secondary cmd-tab-btn" style="display:flex;align-items:center;gap:8px" onClick="{{ toggleMoreTabs }}">{{ activeTabLabel }} <span style="display:inline-block;transition:transform .2s ease;{{ moreTabsIconStyle }}">▾</span></button>
+          <sc-if value="{{ moreTabsOpen }}" hint-placeholder-val="{{ false }}">
+            <div class="cmd-card" style="position:absolute;right:0;top:calc(100% + 6px);min-width:200px;z-index:40;padding:6px;display:flex;flex-direction:column;gap:2px;box-shadow:var(--shadow-lg)">
+              <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="9">
+                <button class="btn btn-ghost cmd-tab-btn" style="{{ t.menuStyle }}" onClick="{{ t.selectAndClose }}">{{ t.label }}</button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
       </div>
     </nav>
   </div>
@@ -183,8 +188,8 @@
       <div class="cmd-grid">
         <sc-for list="{{ gridTiles }}" as="tile" hint-placeholder-count="6">
           <div class="cmd-tile" data-kind="{{ tile.kind }}" data-tile-key="{{ tile.key }}" data-colspan="{{ tile.colSpan }}" style="{{ tile.style }}">
-            <div class="cmd-tile-head" onPointerDown="{{ tile.onDown }}" onPointerMove="{{ tile.onMove }}" onPointerUp="{{ tile.onUp }}">
-              <span class="cmd-grip" title="Drag to reorder"><span></span><span></span><span></span><span></span><span></span><span></span></span>
+            <div class="cmd-tile-head">
+              <span class="cmd-grip" title="Drag to reorder" onPointerDown="{{ tile.onDown }}" onPointerMove="{{ tile.onMove }}" onPointerUp="{{ tile.onUp }}"><span></span><span></span><span></span><span></span><span></span><span></span></span>
               <span class="cmd-tile-title">{{ tile.title }}</span>
               <div class="cmd-tile-actions">
                 <div class="cmd-size-pop"><button class="cmd-x-btn" onPointerDown="{{ stopProp }}" title="Resize">⤢</button><div class="cmd-size-menu">
@@ -334,7 +339,7 @@
 
     <div class="cmd-card" style="padding:var(--space-3);margin-top:var(--cmd-gap)">
       <div class="cmd-sec-head" onClick="{{ togglePinned }}"><h6 style="margin:0">Pinned note — {{ activeTabLabel }}</h6><span style="color:var(--color-accent)">{{ pinnedIcon }}</span></div>
-      <sc-if value="{{ pinnedOpen }}" hint-placeholder-val="{{ false }}"><textarea class="input" style="margin-top:8px;min-height:70px" value="{{ pinnedText }}" onChange="{{ setPinnedText }}"></textarea></sc-if>
+      <sc-if value="{{ pinnedOpen }}" hint-placeholder-val="{{ false }}"><div style="margin-top:8px">{{ pinnedNotesEditor }}</div></sc-if>
     </div>
 
   </div>
@@ -357,6 +362,18 @@ const SIZE_CHART_H = { s:70, wide:90, large:160, full:170 };
 // with just a floor per size so a sparse "large" tile doesn't collapse to sliver-small.
 const TILE_DIMS = { s:{w:1,minH:88}, wide:{w:2,minH:88}, large:{w:2,minH:170}, full:{w:4,minH:110} };
 
+// Extra-task priority: urgent always floats to the top; everything else sorts by whichever
+// date/time it resolves to (an exact pick, or the end of its bucket) — soonest first. A task
+// with neither an urgency bucket nor an exact date/time sinks to the bottom.
+function urgencyMeta(task, todayKey){
+  if(task.urgency==='urgent') return {rank:0, sortKey:-Infinity, label:'Urgent'};
+  if(task.dueAt){ const t=new Date(task.dueAt).getTime(); return {rank:1, sortKey:isNaN(t)?Infinity:t, label:new Date(task.dueAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}; }
+  if(task.urgency==='today') return {rank:1, sortKey:new Date(todayKey+'T23:59:59').getTime(), label:'Today'};
+  if(task.urgency==='week') return {rank:1, sortKey:new Date(U.addDays(todayKey,6)+'T23:59:59').getTime(), label:'This week'};
+  if(task.urgency==='month'){ const d=new Date(todayKey+'T00:00:00'); const end=new Date(d.getFullYear(),d.getMonth()+1,0,23,59,59); return {rank:1, sortKey:end.getTime(), label:'This month'}; }
+  return {rank:2, sortKey:Infinity, label: task.urgency==='future' ? 'Future' : ''};
+}
+
 function curriculumTiles(prefix,label){
   return [
     {key:prefix+'Curricula', title:label+' curricula', size:'full'},
@@ -367,7 +384,7 @@ function curriculumTiles(prefix,label){
 }
 const TAB_BUILTIN_TILES = {
   dashboard: [
-    {key:'dTodo', title:'Daily to-do', size:'wide'},
+    {key:'dTodo', title:'To Do', size:'wide'},
     {key:'dWeekdayChunks', title:'Weekday schedule', size:'full'},
     {key:'dWeekly', title:'Weekly recurring (alt)', size:'wide'},
     {key:'dChunks', title:'Daily chunks', size:'large'},
@@ -421,7 +438,11 @@ class Component extends DCLogic {
     if(!data.weekdayChunks) data.weekdayChunks = {Sun:[],Mon:[],Tue:[],Wed:[],Thu:[],Fri:[],Sat:[]};
     Object.keys(data.days||{}).forEach(k=>{ const day=data.days[k]; if(!day.counterValues) day.counterValues={}; if(day.water!==undefined && day.counterValues.water===undefined) day.counterValues.water=day.water; if(!day.wdChunkDone) day.wdChunkDone={}; if(day.devotion && !day.devotion.chapters) day.devotion.chapters={ot:0,nt:0,psalms:0,proverbs:0}; });
     (data.projects||[]).forEach(f=>{ (f.children||[]).forEach(e=>{ if(e.deactivated===undefined) e.deactivated=false; }); });
-    (data.adHoc||[]).forEach(a=>{ if(a.deadline===undefined) a.deadline=''; });
+    (data.adHoc||[]).forEach(a=>{
+      if(a.urgency===undefined) a.urgency='';
+      if(a.dueAt===undefined) a.dueAt = a.deadline ? a.deadline+'T00:00' : '';
+      delete a.deadline;
+    });
     (data.weeklyTasks||[]).forEach(t=>{ if(t.notes===undefined) t.notes=''; });
     if(!data.finances.barPeriod) data.finances.barPeriod='month';
     if(!data.settings) data.settings={darkMode:false};
@@ -430,6 +451,7 @@ class Component extends DCLogic {
     if(data.scratchPad===undefined) data.scratchPad='';
     if(!data.customTabs) data.customTabs=[];
     if(!data.reminders) data.reminders=[];
+    if(!data.pinnedNoteSections) data.pinnedNoteSections={};
     if(!data.noteSections){
       data.noteSections = [];
       if(data.scratchPad && data.scratchPad.trim()){
@@ -665,7 +687,7 @@ class Component extends DCLogic {
       const day0 = this.ensureDayReadonly(data, dayKey);
       push('TASKS — '+dayKey+' ('+wd+')');
       data.dailyRecurring.forEach(t=>push('  ['+(day0.dailyDone[t.id]?'x':' ')+'] '+t.text));
-      data.adHoc.forEach(t=>push('  ['+(t.done?'x':' ')+'] '+t.text+(t.deadline?' (due '+t.deadline+')':'')));
+      data.adHoc.forEach(t=>{ const m=urgencyMeta(t,today); push('  ['+(t.done?'x':' ')+'] '+t.text+(m.label?' ('+m.label+')':'')); });
       data.weeklyTasks.filter(t=>t.days.includes(wd)).forEach(t=>push('  ['+(day0.weeklyDone[t.id]?'x':' ')+'] '+t.text+' (weekly)'));
       push('  Daily chunks:');
       Object.keys(data.chunks).forEach(cn=>{ push('    '+cn+':'); (data.chunks[cn]||[]).forEach(it=>push('      ['+(day0.chunkDone[it.id]?'x':' ')+'] '+it.text)); });
@@ -729,14 +751,62 @@ class Component extends DCLogic {
 
   // — notes: collapsible sections of checkable items. One-time migration of the old
   // freeform scratch pad text (one line -> one unchecked item) happens in normalizeData.
-  addNoteSection(title){ if(!title||!title.trim())return; this.update(data=>{ data.noteSections.push({id:U.uid(),title:title.trim(),collapsed:false,items:[]}); }); }
-  removeNoteSection(id){ this.update(data=>{ data.noteSections=data.noteSections.filter(s=>s.id!==id); }); }
-  toggleNoteSection(id){ this.update(data=>{ const s=data.noteSections.find(x=>x.id===id); if(s) s.collapsed=!s.collapsed; }); }
-  renameNoteSection(id,val){ this.update(data=>{ const s=data.noteSections.find(x=>x.id===id); if(s) s.title=val; }); }
-  addNoteItem(sectionId,text){ if(!text||!text.trim())return; this.update(data=>{ const s=data.noteSections.find(x=>x.id===sectionId); if(s) s.items.push({id:U.uid(),text:text.trim(),done:false}); }); }
-  toggleNoteItem(sectionId,itemId){ this.update(data=>{ const s=data.noteSections.find(x=>x.id===sectionId); const it=s&&s.items.find(x=>x.id===itemId); if(it) it.done=!it.done; }); }
-  setNoteItemText(sectionId,itemId,val){ this.update(data=>{ const s=data.noteSections.find(x=>x.id===sectionId); const it=s&&s.items.find(x=>x.id===itemId); if(it) it.text=val; }); }
-  removeNoteItem(sectionId,itemId){ this.update(data=>{ const s=data.noteSections.find(x=>x.id===sectionId); if(s) s.items=s.items.filter(x=>x.id!==itemId); }); }
+  // — notes: collapsible sections of checkable items, reused for both the global Notes tile
+  // (path ['noteSections']) and each tab's Pinned Note (path ['pinnedNoteSections', tabKey]).
+  // `path` is a data-object traversal, same convention as addListItem/removeListItem/renameListItem.
+  _sectionsAt(data,path){ let obj=data; for(let i=0;i<path.length-1;i++) obj=obj[path[i]]; if(!obj[path[path.length-1]]) obj[path[path.length-1]]=[]; return obj[path[path.length-1]]; }
+  addSection(path,title){ if(!title||!title.trim())return; this.update(data=>{ this._sectionsAt(data,path).push({id:U.uid(),title:title.trim(),collapsed:false,items:[]}); }); }
+  removeSection(path,id){ this.update(data=>{ const arr=this._sectionsAt(data,path); const i=arr.findIndex(s=>s.id===id); if(i>=0) arr.splice(i,1); }); }
+  toggleSection(path,id){ this.update(data=>{ const s=this._sectionsAt(data,path).find(x=>x.id===id); if(s) s.collapsed=!s.collapsed; }); }
+  renameSection(path,id,val){ this.update(data=>{ const s=this._sectionsAt(data,path).find(x=>x.id===id); if(s) s.title=val; }); }
+  addSectionItem(path,sectionId,text){ if(!text||!text.trim())return; this.update(data=>{ const s=this._sectionsAt(data,path).find(x=>x.id===sectionId); if(s) s.items.push({id:U.uid(),text:text.trim(),done:false}); }); }
+  toggleSectionItem(path,sectionId,itemId){ this.update(data=>{ const s=this._sectionsAt(data,path).find(x=>x.id===sectionId); const it=s&&s.items.find(x=>x.id===itemId); if(it) it.done=!it.done; }); }
+  setSectionItemText(path,sectionId,itemId,val){ this.update(data=>{ const s=this._sectionsAt(data,path).find(x=>x.id===sectionId); const it=s&&s.items.find(x=>x.id===itemId); if(it) it.text=val; }); }
+  removeSectionItem(path,sectionId,itemId){ this.update(data=>{ const s=this._sectionsAt(data,path).find(x=>x.id===sectionId); if(s) s.items=s.items.filter(x=>x.id!==itemId); }); }
+  buildNotesSectionsVM(sections,path){
+    return (sections||[]).map(s=>({
+      id:s.id, title:s.title, collapsed:s.collapsed,
+      toggle:()=>this.toggleSection(path,s.id),
+      rename:(e)=>this.renameSection(path,s.id,e.target.value),
+      remove:()=>this.removeSection(path,s.id),
+      doneCount:s.items.filter(i=>i.done).length, totalCount:s.items.length,
+      items:s.items.map(it=>({
+        id:it.id, text:it.text, done:it.done,
+        toggle:()=>this.toggleSectionItem(path,s.id,it.id),
+        setText:(e)=>this.setSectionItemText(path,s.id,it.id,e.target.value),
+        remove:()=>this.removeSectionItem(path,s.id,it.id)
+      })),
+      addItem:()=>{ const el=document.getElementById('noteItemDraft-'+s.id); if(el && el.value.trim()){ this.addSectionItem(path,s.id,el.value.trim()); el.value=''; } }
+    }));
+  }
+  // Shared dual-mode notes editor: a "Quick note" freeform textarea, or a "Checklist" of
+  // collapsible sections — the user picks per-widget, so a password/reminder doesn't have to
+  // go through the list flow and a real list doesn't get squashed into one text blob.
+  renderNotesEditor(vm){
+    const modeBtn = (key,label)=> E('button',{key,className:'btn '+(vm.mode===key?'btn-primary':'btn-secondary'),style:{fontSize:11,padding:'3px 9px'},onClick:()=>vm.setMode(key)},label);
+    return E('div',null,
+      E('div',{style:{display:'flex',gap:4,marginBottom:8}}, modeBtn('quick','Quick note'), modeBtn('list','Checklist')),
+      vm.mode==='quick'
+        ? E('textarea',{className:'input',style:{minHeight:110},placeholder:'Write anything — a password, an idea, a reminder…',defaultValue:vm.quickText,onBlur:vm.setQuick})
+        : E('div',null,
+            vm.sections.map(s=>E('div',{key:s.id,style:{borderBottom:'1px solid var(--color-divider)',padding:'6px 0'}},
+              E('div',{style:{display:'flex',alignItems:'center',gap:6,cursor:'pointer'},onClick:s.toggle},
+                E('span',{style:{color:'var(--color-accent)',fontSize:11,width:12,flex:'none'}}, s.collapsed?'▸':'▾'),
+                E('input',{className:'cmd-txt',style:{fontWeight:600,fontSize:13},value:s.title,onClick:(e)=>e.stopPropagation(),onChange:s.rename}),
+                E('span',{className:'text-muted',style:{fontSize:11,flex:'none'}}, s.totalCount?s.doneCount+'/'+s.totalCount:''),
+                E('button',{className:'cmd-x-btn',onClick:(e)=>{e.stopPropagation();s.remove();}},'×')),
+              s.collapsed ? null : E('div',{style:{marginTop:4,paddingLeft:18}},
+                s.items.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:6,padding:'2px 0'}},
+                  E('input',{type:'checkbox',className:'cmd-chk',style:{width:14,height:14},checked:it.done,onChange:it.toggle}),
+                  E('input',{className:'cmd-txt',style:{fontSize:12,textDecoration:it.done?'line-through':'none',opacity:it.done?0.55:1},value:it.text,onChange:it.setText}),
+                  E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
+                E('div',{style:{display:'flex',gap:6,marginTop:4}},
+                  E('input',{className:'input',id:'noteItemDraft-'+s.id,style:{fontSize:12,flex:1},placeholder:'+ item…',onKeyDown:(e)=>{if(e.key==='Enter')s.addItem();}}),
+                  E('button',{className:'btn btn-ghost',style:{fontSize:11},onClick:s.addItem},'Add'))))),
+            E('div',{style:{display:'flex',gap:6,marginTop:10}},
+              E('input',{className:'input',id:'noteSectionDraft-'+vm.idPrefix,style:{fontSize:12,flex:1},placeholder:'New section title…',onKeyDown:(e)=>{if(e.key==='Enter')vm.addSection();}}),
+              E('button',{className:'btn btn-secondary',style:{fontSize:12},onClick:vm.addSection},'+ Section'))));
+  }
 
   setUserName(e){ this.update(data=>{ data.settings.userName = e.target.value; }); }
 
@@ -1207,6 +1277,7 @@ class Component extends DCLogic {
       tabs, moreTabsOpen: this.state.moreTabsOpen, toggleMoreTabs: ()=>this.setState(s=>({moreTabsOpen:!s.moreTabsOpen})),
       moreTabsIconStyle: this.state.moreTabsOpen?'transform:rotate(180deg)':'transform:rotate(0deg)',
       activeTabLabel, streakDays: data.streak||1, stopProp: (e)=>e.stopPropagation(),
+      openNotesShortcut: ()=>this.setState({activeTab:'resources', modalTab:'resources', modalId:'rScratch', modalFullscreen:false}),
     };
 
     vals.hideCompleted = this.state.hideCompleted; vals.toggleHideCompleted = ()=>this.setState(s=>({hideCompleted:!s.hideCompleted}));
@@ -1236,8 +1307,17 @@ class Component extends DCLogic {
     vals.dailyRecurringVM = data.dailyRecurring.map(t=>({ id:t.id, text:t.text, done: !!day0.dailyDone[t.id], toggle:()=>this.toggleDailyDone(t.id), rename:(e)=>this.renameListItem(['dailyRecurring'],t.id,'text',e.target.value), remove:()=>this.removeListItem(['dailyRecurring'],t.id) })).filter(it=>!hc||!it.done);
     vals.addDailyRecurringKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['dailyRecurring'],{id:U2.uid(),text:e.target.value.trim()}); e.target.value=''; } };
 
-    vals.adHocVM = data.adHoc.map(t=>({ id:t.id, text:t.text, done:t.done, deadline:t.deadline||'', toggle:()=>this.toggleAdHoc(t.id), rename:(e)=>this.renameListItem(['adHoc'],t.id,'text',e.target.value), setDeadline:(e)=>this.renameListItem(['adHoc'],t.id,'deadline',e.target.value), remove:()=>this.removeListItem(['adHoc'],t.id) })).filter(it=>!hc||!it.done);
-    vals.addAdHocKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['adHoc'],{id:U2.uid(),text:e.target.value.trim(),done:false,deadline:''}); e.target.value=''; } };
+    const todayKeyForUrgency = U2.todayKey();
+    vals.adHocVM = data.adHoc.map(t=>{
+      const meta = urgencyMeta(t, todayKeyForUrgency);
+      return { id:t.id, text:t.text, done:t.done, urgency:t.urgency||'', dueAt:t.dueAt||'', urgencyLabel:meta.label, rank:meta.rank, sortKey:meta.sortKey,
+        toggle:()=>this.toggleAdHoc(t.id),
+        rename:(e)=>this.renameListItem(['adHoc'],t.id,'text',e.target.value),
+        setUrgency:(e)=>{ const v=e.target.value; this.update(d=>{ const it=d.adHoc.find(x=>x.id===t.id); if(it){ it.urgency=v; if(v) it.dueAt=''; } }); },
+        setDueAt:(e)=>{ const v=e.target.value; this.update(d=>{ const it=d.adHoc.find(x=>x.id===t.id); if(it){ it.dueAt=v; if(v) it.urgency=''; } }); },
+        remove:()=>this.removeListItem(['adHoc'],t.id) };
+    }).filter(it=>!hc||!it.done).sort((a,b)=>a.rank-b.rank || a.sortKey-b.sortKey);
+    vals.addAdHocKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['adHoc'],{id:U2.uid(),text:e.target.value.trim(),done:false,urgency:'',dueAt:''}); e.target.value=''; } };
 
     vals.weekdayChunksVM = U2.WEEKDAYS.map(dname=>({ label:dname, notToday: dname!==wd, highlightStyle: dname===wd?'box-shadow: inset 0 0 0 2px var(--color-accent);':'',
       items:(data.weekdayChunks[dname]||[]).map(it=>({ id:it.id, text:it.text, done: !!day0.wdChunkDone[it.id], toggle:()=>this.toggleWdChunkDone(it.id), rename:(e)=>this.renameListItem(['weekdayChunks',dname],it.id,'text',e.target.value), remove:()=>this.removeListItem(['weekdayChunks',dname],it.id) })).filter(it=>!hc||dname!==wd||!it.done),
@@ -1358,21 +1438,22 @@ class Component extends DCLogic {
         }) };
     });
 
-    vals.noteSectionsVM = (data.noteSections||[]).map(s=>({
-      id:s.id, title:s.title, collapsed:s.collapsed,
-      toggle:()=>this.toggleNoteSection(s.id),
-      rename:(e)=>this.renameNoteSection(s.id,e.target.value),
-      remove:()=>this.removeNoteSection(s.id),
-      doneCount:s.items.filter(i=>i.done).length, totalCount:s.items.length,
-      items:s.items.map(it=>({
-        id:it.id, text:it.text, done:it.done,
-        toggle:()=>this.toggleNoteItem(s.id,it.id),
-        setText:(e)=>this.setNoteItemText(s.id,it.id,e.target.value),
-        remove:()=>this.removeNoteItem(s.id,it.id)
-      })),
-      addItem:()=>{ const el=document.getElementById('noteItemDraft-'+s.id); if(el && el.value.trim()){ this.addNoteItem(s.id, el.value.trim()); el.value=''; } }
-    }));
-    vals.addNoteSection = ()=>{ const el=document.getElementById('noteSectionDraft'); if(el && el.value.trim()){ this.addNoteSection(el.value.trim()); el.value=''; } };
+    vals.notesEditor = this.renderNotesEditor({
+      mode: this.getUi('notesGlobal','mode', data.noteSections.length?'list':'quick'),
+      setMode: (m)=>this.setUi('notesGlobal','mode',m),
+      quickText: data.scratchPad||'', setQuick: (e)=>this.update(d=>{ d.scratchPad=e.target.value; }),
+      sections: this.buildNotesSectionsVM(data.noteSections,['noteSections']),
+      addSection: ()=>{ const el=document.getElementById('noteSectionDraft-global'); if(el && el.value.trim()){ this.addSection(['noteSections'], el.value.trim()); el.value=''; } },
+      idPrefix:'global'
+    });
+    vals.notesCondensed = (()=>{
+      const mode = this.getUi('notesGlobal','mode', data.noteSections.length?'list':'quick');
+      if(mode==='quick') return data.scratchPad ? data.scratchPad : null;
+      if(!data.noteSections.length) return null;
+      const total = data.noteSections.reduce((a,s)=>a+s.items.length,0);
+      const done = data.noteSections.reduce((a,s)=>a+s.items.filter(i=>i.done).length,0);
+      return data.noteSections.length+' section'+(data.noteSections.length===1?'':'s')+(total?' · '+done+'/'+total+' done':'');
+    })();
     vals.pickerResult = this.state.pickerResult||'';
     vals.pickRandom = ()=>{ const el=document.getElementById('pickerListDraft'); if(!el) return; const items=(el.value||'').split('\n').map(s=>s.trim()).filter(Boolean); if(!items.length) return; this.setState({pickerResult: items[Math.floor(Math.random()*items.length)]}); };
 
@@ -1494,11 +1575,18 @@ class Component extends DCLogic {
                 vals.dailyRecurringVM.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}},
                   E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,onChange:it.toggle}), E('input',{className:'cmd-txt',defaultValue:it.text,onBlur:it.rename}), E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
                 E('input',{className:'input',style:{marginTop:8},placeholder:'Add recurring task, press Enter',onKeyDown:vals.addDailyRecurringKey})),
-              E('div',null, E('h6',{className:'text-muted',style:{marginBottom:8}},'Ad hoc'),
-                vals.adHocVM.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',flexWrap:'wrap'}},
-                  E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,onChange:it.toggle}), E('input',{className:'cmd-txt',style:{flex:1,minWidth:100},defaultValue:it.text,onBlur:it.rename}),
-                  E('input',{className:'input',style:{width:140,fontSize:12},type:'date',defaultValue:it.deadline,onChange:it.setDeadline}), E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
-                E('input',{className:'input',style:{marginTop:8},placeholder:'Add ad hoc item, press Enter',onKeyDown:vals.addAdHocKey}))) };
+              E('div',null, E('h6',{className:'text-muted',style:{marginBottom:8}},'Extra tasks'),
+                vals.adHocVM.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:6,padding:'5px 0',flexWrap:'wrap',borderBottom:'1px solid var(--color-divider)'}},
+                  E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,onChange:it.toggle}),
+                  E('input',{className:'cmd-txt',style:{flex:1,minWidth:90},defaultValue:it.text,onBlur:it.rename}),
+                  it.urgencyLabel ? E('span',{className:'tag',style:{fontSize:10,flex:'none',background:it.urgency==='urgent'?'#c96a4f':undefined,color:it.urgency==='urgent'?'#fff':undefined}}, it.urgencyLabel) : null,
+                  E('button',{className:'cmd-x-btn',onClick:it.remove},'×'),
+                  E('div',{style:{display:'flex',gap:6,width:'100%',marginTop:2}},
+                    E('select',{className:'input',style:{width:'auto',fontSize:11,padding:'3px 4px'},value:it.urgency,onChange:it.setUrgency},
+                      E('option',{value:''},'No date'), E('option',{value:'urgent'},'Urgent'), E('option',{value:'today'},'Today'),
+                      E('option',{value:'week'},'This week'), E('option',{value:'month'},'This month'), E('option',{value:'future'},'Future')),
+                    E('input',{className:'input',style:{flex:1,fontSize:11},type:'datetime-local',value:it.dueAt,onChange:it.setDueAt,title:'Or pick an exact date & time'})))),
+                E('input',{className:'input',style:{marginTop:8},placeholder:'Add a task, press Enter',onKeyDown:vals.addAdHocKey}))) };
         }
         case 'dWeekdayChunks': {
           const todayWc = vals.weekdayChunksVM.find(w=>!w.notToday);
@@ -1801,29 +1889,9 @@ class Component extends DCLogic {
                 E('button',{className:'btn btn-secondary',onClick:vals.addReminderSubmit},'Add'))) };
         }
         case 'rScratch': {
-          const sections = vals.noteSectionsVM;
-          const totalItems = sections.reduce((a,s)=>a+s.totalCount,0);
-          const doneItems = sections.reduce((a,s)=>a+s.doneCount,0);
           return {
-            condensed: sections.length ? E('p',{style:{fontSize:12}}, sections.length+' section'+(sections.length===1?'':'s')+(totalItems?' · '+doneItems+'/'+totalItems+' done':'')) : E('span',{className:'text-muted',style:{fontSize:12}},'Empty — tap to write.'),
-            full: E('div',null,
-              sections.map(s=>E('div',{key:s.id,style:{borderBottom:'1px solid var(--color-divider)',padding:'6px 0'}},
-                E('div',{style:{display:'flex',alignItems:'center',gap:6,cursor:'pointer'},onClick:s.toggle},
-                  E('span',{style:{color:'var(--color-accent)',fontSize:11,width:12,flex:'none'}}, s.collapsed?'▸':'▾'),
-                  E('input',{className:'cmd-txt',style:{fontWeight:600,fontSize:13},value:s.title,onClick:(e)=>e.stopPropagation(),onChange:s.rename}),
-                  E('span',{className:'text-muted',style:{fontSize:11,flex:'none'}}, s.totalCount?s.doneCount+'/'+s.totalCount:''),
-                  E('button',{className:'cmd-x-btn',onClick:(e)=>{e.stopPropagation();s.remove();}},'×')),
-                s.collapsed ? null : E('div',{style:{marginTop:4,paddingLeft:18}},
-                  s.items.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:6,padding:'2px 0'}},
-                    E('input',{type:'checkbox',className:'cmd-chk',style:{width:14,height:14},checked:it.done,onChange:it.toggle}),
-                    E('input',{className:'cmd-txt',style:{fontSize:12,textDecoration:it.done?'line-through':'none',opacity:it.done?0.55:1},value:it.text,onChange:it.setText}),
-                    E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
-                  E('div',{style:{display:'flex',gap:6,marginTop:4}},
-                    E('input',{className:'input',id:'noteItemDraft-'+s.id,style:{fontSize:12,flex:1},placeholder:'+ item…',onKeyDown:(e)=>{if(e.key==='Enter')s.addItem();}}),
-                    E('button',{className:'btn btn-ghost',style:{fontSize:11},onClick:s.addItem},'Add'))))),
-              E('div',{style:{display:'flex',gap:6,marginTop:10}},
-                E('input',{className:'input',id:'noteSectionDraft',style:{fontSize:12,flex:1},placeholder:'New section title…',onKeyDown:(e)=>{if(e.key==='Enter')vals.addNoteSection();}}),
-                E('button',{className:'btn btn-secondary',style:{fontSize:12},onClick:vals.addNoteSection},'+ Section')))
+            condensed: vals.notesCondensed ? E('p',{style:{fontSize:12,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:4,WebkitBoxOrient:'vertical'}}, vals.notesCondensed) : E('span',{className:'text-muted',style:{fontSize:12}},'Empty — tap to write.'),
+            full: vals.notesEditor
           };
         }
         case 'rPicker':
@@ -1937,7 +2005,18 @@ class Component extends DCLogic {
     }
 
     vals.pinnedOpen = this.getUi('pinned-'+tabKey,'open',false); vals.togglePinned = ()=>this.toggleUi('pinned-'+tabKey,'open',false); vals.pinnedIcon = vals.pinnedOpen ? '−' : '+';
-    vals.pinnedText = data.pinnedNotes[tabKey] || ''; vals.setPinnedText = (e)=>this.setPinnedText(tabKey, e.target.value);
+    {
+      const pinnedPath = ['pinnedNoteSections', tabKey];
+      const pinnedSections = data.pinnedNoteSections[tabKey]||[];
+      vals.pinnedNotesEditor = this.renderNotesEditor({
+        mode: this.getUi('pinned-'+tabKey,'mode', pinnedSections.length?'list':'quick'),
+        setMode: (m)=>this.setUi('pinned-'+tabKey,'mode',m),
+        quickText: data.pinnedNotes[tabKey]||'', setQuick: (e)=>this.setPinnedText(tabKey, e.target.value),
+        sections: this.buildNotesSectionsVM(pinnedSections, pinnedPath),
+        addSection: ()=>{ const el=document.getElementById('noteSectionDraft-pinned-'+tabKey); if(el && el.value.trim()){ this.addSection(pinnedPath, el.value.trim()); el.value=''; } },
+        idPrefix:'pinned-'+tabKey
+      });
+    }
 
     // — Badges tab: every completed/practice course across every subject, in one place —
     const badgeSubjects = [['stem','STEM'],['bible','Bible'],['civ','Civ Studies']];
