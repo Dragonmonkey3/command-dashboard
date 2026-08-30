@@ -378,7 +378,7 @@ const TILE_DIMS = { s:{w:1,minH:88}, wide:{w:2,minH:88}, large:{w:2,minH:170}, f
 // exact date/time is placed into whichever tier it naturally falls in, then sorted true-chronologically
 // within that tier so it interleaves sensibly with the bucketed items around it.
 function urgencyMeta(task, todayKey){
-  if(task.urgency==='urgent') return {rank:0, sortKey:-Infinity, label:'Urgent'};
+  if(task.urgency==='urgent') return {rank:0, sortKey:-Infinity, label:'ASAP'};
   const todayEnd = new Date(todayKey+'T23:59:59').getTime();
   const weekEnd = new Date(U.addDays(todayKey,6)+'T23:59:59').getTime();
   const d0 = new Date(todayKey+'T00:00:00');
@@ -419,8 +419,8 @@ const TAB_BUILTIN_TILES = {
     {key:'fBar', title:'Income vs. spending', size:'wide'},
     {key:'fPie', title:'Spending by category', size:'large'},
     {key:'fIncome', title:'Income streams', size:'wide'},
-    {key:'fStocks', title:'Stocks', size:'wide'},
-    {key:'fStocksGraph', title:'Stocks value', size:'large'}
+    {key:'fStocks', title:'Investments', size:'wide'},
+    {key:'fStocksGraph', title:'Investments value', size:'large'}
   ],
   daily: [
     {key:'dayDevotion', title:'Devotion', size:'large'},
@@ -471,6 +471,9 @@ class Component extends DCLogic {
     (data.weeklyTasks||[]).forEach(t=>{ if(t.notes===undefined) t.notes=''; });
     if(!data.finances.barPeriod) data.finances.barPeriod='month';
     if(!data.finances.incomeLog) data.finances.incomeLog=[];
+    if(!data.finances.incomeCategories) data.finances.incomeCategories=[];
+    if(!data.finances.incomePeriod) data.finances.incomePeriod='monthly';
+    data.finances.incomeLog.forEach(e=>{ if(e.catId===undefined) e.catId=''; });
     if(!data.settings) data.settings={darkMode:false};
     if(data.settings.userName===undefined) data.settings.userName='Alex';
     if(data.updatedAt===undefined) data.updatedAt=0;
@@ -1205,6 +1208,32 @@ class Component extends DCLogic {
     return E('div',null, svg, legendEl);
   }
 
+  // Net (income − spending) per calendar week, last 12 weeks, with a dashed zero baseline so
+  // it's obvious at a glance which weeks ran a deficit vs. a surplus.
+  buildIncomeNetTrend(data,heightPx){
+    const fin = data.finances;
+    const today = U.todayKey();
+    const weeks = 12;
+    const H=parseInt(heightPx)||100, padL=6, padR=6, padT=8, padB=8;
+    const W=Math.max(240, weeks*(heightPx?18:30));
+    const weekly = [];
+    for(let w=weeks-1; w>=0; w--){
+      const end = U.addDays(today,-7*w), start = U.addDays(end,-6);
+      const inc = (fin.incomeLog||[]).filter(e=>e.date>=start && e.date<=end).reduce((a,e)=>a+(Number(e.amount)||0),0);
+      const spend = (fin.transactions||[]).filter(t=>t.date>=start && t.date<=end).reduce((a,t)=>a+(Number(t.amount)||0),0);
+      weekly.push(inc-spend);
+    }
+    const min = Math.min(...weekly,0), max = Math.max(...weekly,0);
+    const range = (max-min)||1;
+    const yOf = (v)=> padT + (100-((v-min)/range*100))/100*(H-padT-padB);
+    const pts = weekly.map((v,i)=>{ const x=padL+i*((W-padL-padR)/(weekly.length-1||1)); return x.toFixed(1)+','+yOf(v).toFixed(1); }).join(' ');
+    const zeroY = yOf(0);
+    const last = weekly[weekly.length-1]||0;
+    return E('svg',{viewBox:'0 0 '+W+' '+H,style:{display:'block',width:'100%',height:heightPx||'auto'},preserveAspectRatio:'xMinYMid meet'},
+      E('line',{x1:padL,x2:W-padR,y1:zeroY,y2:zeroY,stroke:'var(--color-divider)',strokeWidth:1,strokeDasharray:'3 3'}),
+      E('polyline',{points:pts,fill:'none',stroke: last>=0?'var(--color-accent-800)':'#c96a4f',strokeWidth:2}));
+  }
+
   buildSkillTree(mod, tab, ci, mi){
     const nodes = mod.tree_nodes||[];
     const depthCache = {};
@@ -1477,6 +1506,9 @@ class Component extends DCLogic {
     // Income as a dated log (add one entry whenever you get paid — weekly on Sundays works
     // great) rather than a fixed list of named "monthly streams": rolls up into week/month/
     // lifetime totals from real entries instead of assuming every stream recurs every month.
+    // Categorized by source and charted the same way spending is (pie + period toggle), plus
+    // fixed week/month/lifetime rollups and a net-vs-spending figure that the spending tile
+    // doesn't need since it has nothing to net against.
     {
       const incomeLog = fin.incomeLog||[];
       const todayKeyIL = U2.todayKey();
@@ -1487,15 +1519,27 @@ class Component extends DCLogic {
       vals.incomeLifetimeTotal = incomeLog.reduce((a,e)=>a+(Number(e.amount)||0),0);
       vals.lifetimeSpending = fin.transactions.reduce((a,t)=>a+(Number(t.amount)||0),0);
       vals.lifetimeNet = (vals.incomeLifetimeTotal - vals.lifetimeSpending).toFixed(2);
-      vals.incomeLogVM = incomeLog.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(e=>({ id:e.id, date:e.date, amount:e.amount, note:e.note||'', remove:()=>this.removeListItem(['finances','incomeLog'],e.id) }));
-      vals.addIncomeLogEntry = ()=>{ const a=document.getElementById('incLogAmountDraft'), n=document.getElementById('incLogNoteDraft'); if(a.value && Number(a.value)){ this.addListItem(['finances','incomeLog'],{id:U2.uid(),date:todayKeyIL,amount:Number(a.value),note:(n.value||'').trim()}); a.value=''; n.value=''; } };
+
+      const incPeriodFilter = (e)=>{ if(fin.incomePeriod==='lifetime') return true; const days = fin.incomePeriod==='weekly'?7:30; return e.date >= U2.addDays(today,-days); };
+      const incTxs = incomeLog.filter(incPeriodFilter);
+      const incCatTotals = {}; incTxs.forEach(e=>{ incCatTotals[e.catId]=(incCatTotals[e.catId]||0)+(Number(e.amount)||0); });
+      const incGrand = Object.values(incCatTotals).reduce((a,b)=>a+b,0)||1;
+      let incCum=0;
+      const incGradientStops = fin.incomeCategories.map((c,i)=>{ const val=incCatTotals[c.id]||0; const start=incCum/incGrand*100; incCum+=val; const end=incCum/incGrand*100; return PALETTE[i%PALETTE.length]+' '+start.toFixed(1)+'% '+end.toFixed(1)+'%'; }).join(', ');
+      vals.incomePieStyle = { width:'110px', height:'110px', borderRadius:'50%', background: incGrand>1?('conic-gradient('+incGradientStops+')'):'var(--color-neutral-200)', flex:'none' };
+      vals.incomePeriodOptions = ['weekly','monthly','lifetime'].map(p=>({ label:p, active: fin.incomePeriod===p, select:()=>this.update(d=>{d.finances.incomePeriod=p;}) }));
+      vals.incomeCategoryVM = fin.incomeCategories.map((c,i)=>({ id:c.id, name:c.name, total: Math.round(incCatTotals[c.id]||0), dotStyle:{width:'10px',height:'10px',borderRadius:'50%',background:PALETTE[i%PALETTE.length],display:'inline-block'}, rename:(e)=>this.renameListItem(['finances','incomeCategories'],c.id,'name',e.target.value), remove:()=>this.removeListItem(['finances','incomeCategories'],c.id) }));
+      vals.addIncomeCategory = ()=>{ const el=document.getElementById('incCatNameDraft'); if(el.value.trim()){ this.addListItem(['finances','incomeCategories'],{id:U2.uid(),name:el.value.trim()}); el.value=''; } };
+      vals.incomeCategoryOptions = fin.incomeCategories.map(c=>({id:c.id,name:c.name}));
+      vals.addIncomeLogEntry = ()=>{ const cat=document.getElementById('incCatDraft').value, amt=document.getElementById('incLogAmountDraft').value, dt=document.getElementById('incLogDateDraft').value; if(cat && amt){ this.addListItem(['finances','incomeLog'],{id:U2.uid(),catId:cat,amount:Number(amt),date: dt||todayKeyIL}); document.getElementById('incLogAmountDraft').value=''; } };
+      vals.incomeLogVM = incomeLog.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,15).map(e=>{ const idx=fin.incomeCategories.findIndex(c=>c.id===e.catId); const cat=fin.incomeCategories[idx]; return { id:e.id, catName: cat?cat.name:'—', date:e.date, amount:e.amount, dotStyle:{width:'8px',height:'8px',borderRadius:'50%',background:PALETTE[idx%PALETTE.length]||'var(--color-neutral-400)',display:'inline-block'}, remove:()=>this.removeListItem(['finances','incomeLog'],e.id) }; });
     }
 
     const barPeriod = fin.barPeriod||'month';
-    vals.barPeriodOptions = ['week','month'].map(p=>({ label:p, active: barPeriod===p, select:()=>this.update(d=>{d.finances.barPeriod=p;}) }));
-    const barDays = barPeriod==='week'?7:30;
-    const barSpendTotal = fin.transactions.filter(t=>t.date>=U2.addDays(today,-barDays)).reduce((a,t)=>a+t.amount,0);
-    const barIncomeTotal = (fin.incomeLog||[]).filter(e=>e.date>=U2.addDays(today,-barDays)).reduce((a,e)=>a+(Number(e.amount)||0),0);
+    vals.barPeriodOptions = ['week','month','lifetime'].map(p=>({ label:p, active: barPeriod===p, select:()=>this.update(d=>{d.finances.barPeriod=p;}) }));
+    const barDays = barPeriod==='week'?7:barPeriod==='month'?30:null;
+    const barSpendTotal = (barDays==null ? fin.transactions : fin.transactions.filter(t=>t.date>=U2.addDays(today,-barDays))).reduce((a,t)=>a+t.amount,0);
+    const barIncomeTotal = (barDays==null ? (fin.incomeLog||[]) : (fin.incomeLog||[]).filter(e=>e.date>=U2.addDays(today,-barDays))).reduce((a,e)=>a+(Number(e.amount)||0),0);
     const barMax = Math.max(barIncomeTotal,barSpendTotal,1);
     vals.barIncome = Math.round(barIncomeTotal); vals.barSpending = Math.round(barSpendTotal);
     vals.incomeBarStyle = { width:'44px', height: Math.max(4,barIncomeTotal/barMax*90)+'px', background:'var(--color-accent-600)' };
@@ -1689,7 +1733,7 @@ class Component extends DCLogic {
           const doneN = recurring.filter(i=>i.done).length + extra.filter(i=>i.done).length;
           const totalN = recurring.length + extra.length;
           const colHead = (label)=> E('h6',{className:'text-muted',style:{margin:'0 0 5px',fontSize:10,textTransform:'uppercase',letterSpacing:'.04em'}}, label);
-          const urgTag = (it)=> it.urgencyLabel ? E('span',{className:'tag',style:{fontSize:9,padding:'1px 5px',flex:'none',background:it.urgency==='urgent'?'#c96a4f':undefined,color:it.urgency==='urgent'?'#fff':undefined}}, it.urgencyLabel) : null;
+          const urgTag = (it)=> it.urgencyLabel ? E('span',{className:'tag',style:{fontSize:9,padding:'1px 5px',flex:'none',background:it.urgency==='urgent'?'#e3a1a1':undefined,color:it.urgency==='urgent'?'#7a2e2e':undefined}}, it.urgencyLabel) : null;
           const miniRow = (it)=> E('label',{key:it.id,style:{display:'flex',alignItems:'center',gap:6,padding:'2px 0',fontSize:12,cursor:'pointer'},onClick:(e)=>e.stopPropagation()},
             E('input',{type:'checkbox',className:'cmd-chk',style:{width:13,height:13,flex:'none'},checked:it.done,onChange:it.toggle}),
             E('span',{style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',textDecoration:it.done?'line-through':'none',opacity:it.done?0.55:1,flex:1,minWidth:0}}, it.text),
@@ -1713,7 +1757,7 @@ class Component extends DCLogic {
                       E('button',{className:'cmd-x-btn',onClick:it.remove},'×')),
                     open ? E('div',{style:{display:'flex',gap:6,marginTop:5,paddingLeft:22,flexWrap:'wrap'}},
                       E('select',{className:'input',style:{width:'auto',fontSize:11,padding:'3px 4px'},value:it.urgency,onChange:it.setUrgency},
-                        E('option',{value:''},'No date'), E('option',{value:'urgent'},'Urgent'), E('option',{value:'today'},'Today'),
+                        E('option',{value:''},'No date'), E('option',{value:'urgent'},'ASAP'), E('option',{value:'today'},'Today'),
                         E('option',{value:'week'},'This week'), E('option',{value:'month'},'This month'), E('option',{value:'future'},'Future')),
                       E('input',{className:'input',style:{flex:1,minWidth:140,fontSize:11},type:'datetime-local',value:it.dueAt,onChange:it.setDueAt,title:'Or pick an exact date & time'})) : null);
                 }),
@@ -1818,7 +1862,11 @@ class Component extends DCLogic {
             E('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:4,height:'100%',justifyContent:'flex-end'}}, E('span',{style:{fontSize:11}},'$'+vals.barSpending), E('div',{style:vals.spendingBarStyle}), E('span',{className:'text-muted',style:{fontSize:10}},'Spending')));
           return { condensed: E('div',null, barsEl('70px'), E('p',{style:vals.netStyle},vals.netLabel)),
             full: E('div',null, E('div',{className:'seg',style:{margin:'8px 0'}}, vals.barPeriodOptions.map(p=>E('label',{key:p.label,className:'seg-opt'}, E('input',{type:'radio',name:'barperiod',checked:p.active,onChange:p.select}), E('span',{className:'dot'}), p.label))),
-              barsEl('100px'), E('p',{style:vals.netStyle},vals.netLabel)) };
+              E('div',{style:{display:'flex',gap:20,flexWrap:'wrap',alignItems:'flex-end'}},
+                E('div',null, barsEl('120px'), E('p',{style:vals.netStyle},vals.netLabel)),
+                E('div',{style:{flex:'1 1 220px',minWidth:200}},
+                  E('p',{className:'text-muted',style:{fontSize:11,marginBottom:4}},'Weekly net (income − spending), last 12 weeks'),
+                  this.buildIncomeNetTrend(data,'110px')))) };
         }
         case 'fPie': {
           return { condensed: E('div',{style:{display:'flex',gap:14,alignItems:'center'}}, E('div',{style:{...vals.pieStyle,width:100,height:100}}),
@@ -1839,29 +1887,32 @@ class Component extends DCLogic {
         case 'fIncome': {
           const statCol = (label,val)=> E('div',null, E('div',{className:'text-muted',style:{fontSize:11}},label), E('b',{style:{fontSize:14}},'$'+val));
           return {
-            condensed: E('div',null,
-              E('div',{style:{fontSize:12,display:'flex',justifyContent:'space-between'}}, E('span',null,'This month'), E('b',null,'$'+vals.incomeMonthTotal)),
-              E('div',{style:{fontSize:12,display:'flex',justifyContent:'space-between',marginTop:3}}, E('span',null,'Lifetime'), E('b',null,'$'+vals.incomeLifetimeTotal))),
+            condensed: E('div',{style:{display:'flex',gap:14,alignItems:'center'}}, E('div',{style:{...vals.incomePieStyle,width:100,height:100}}),
+              E('div',null, shortList(vals.incomeCategoryVM,5,c=>E('div',{key:c.id,style:{display:'flex',alignItems:'center',gap:6,fontSize:12,padding:'2px 0'}}, E('span',{style:c.dotStyle}), E('span',null,c.name), E('span',{className:'text-muted',style:{marginLeft:'auto'}},'$'+c.total))))),
             full: E('div',null,
-              E('p',{className:'text-muted',style:{fontSize:11,marginBottom:8}},'Log what comes in whenever you get paid — weekly on Sundays works well — and it rolls up below.'),
-              E('div',{style:{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}},
-                E('input',{className:'input',id:'incLogAmountDraft',type:'number',placeholder:'Amount',style:{width:120}}),
-                E('input',{className:'input',id:'incLogNoteDraft',placeholder:'Note (optional)',style:{flex:1,minWidth:120}}),
-                E('button',{className:'btn btn-secondary',onClick:vals.addIncomeLogEntry},'Add')),
-              E('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,padding:'8px 0',borderTop:'1px solid var(--color-divider)',borderBottom:'1px solid var(--color-divider)',marginBottom:8}},
+              E('div',{className:'seg',style:{margin:'8px 0'}}, vals.incomePeriodOptions.map(p=>E('label',{key:p.label,className:'seg-opt'}, E('input',{type:'radio',name:'incperiod',checked:p.active,onChange:p.select}), E('span',{className:'dot'}), p.label))),
+              E('div',{style:{display:'flex',gap:16,flexWrap:'wrap',alignItems:'center'}}, E('div',{style:vals.incomePieStyle}),
+                E('div',{style:{minWidth:180}}, vals.incomeCategoryVM.map(c=>E('div',{key:c.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}},
+                  E('span',{style:c.dotStyle}), E('input',{className:'cmd-txt',style:{maxWidth:100},defaultValue:c.name,onBlur:c.rename}), E('span',{className:'text-muted',style:{fontSize:12,marginLeft:'auto'}},'$'+c.total), E('button',{className:'cmd-x-btn',onClick:c.remove},'×'))),
+                  E('div',{style:{display:'flex',gap:6,marginTop:8}}, E('input',{className:'input',id:'incCatNameDraft',placeholder:'New source'}), E('button',{className:'btn btn-secondary',onClick:vals.addIncomeCategory},'Add')))),
+              E('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,padding:'8px 0',borderTop:'1px solid var(--color-divider)',borderBottom:'1px solid var(--color-divider)',margin:'14px 0 8px'}},
                 statCol('This week',vals.incomeWeekTotal), statCol('This month',vals.incomeMonthTotal), statCol('Lifetime',vals.incomeLifetimeTotal)),
               E('div',{style:{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:10}},
                 E('span',{className:'text-muted'},'Lifetime net (income − spending)'),
                 E('b',{style:{color: Number(vals.lifetimeNet)>=0?'var(--color-accent-800)':'#c96a4f'}},'$'+vals.lifetimeNet)),
-              vals.incomeLogVM.length ? vals.incomeLogVM.map(e=>E('div',{key:e.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:'1px solid var(--color-divider)',fontSize:12}},
-                E('span',{className:'text-muted',style:{flex:'none'}},e.date), e.note?E('span',{style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},e.note):null,
-                E('b',{style:{marginLeft:'auto',flex:'none'}},'$'+e.amount), E('button',{className:'cmd-x-btn',onClick:e.remove},'×'))) : E('p',{className:'text-muted',style:{fontSize:12}},'No entries yet.')) };
+              E('h6',{className:'text-muted',style:{marginTop:14}},'Log income'),
+              E('div',{style:{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}},
+                E('select',{className:'input',style:{width:'auto'},id:'incCatDraft'}, vals.incomeCategoryOptions.map(c=>E('option',{key:c.id,value:c.id},c.name))),
+                E('input',{className:'input',style:{width:120},id:'incLogAmountDraft',type:'number',placeholder:'Amount'}), E('input',{className:'input',style:{width:150},id:'incLogDateDraft',type:'date'}),
+                E('button',{className:'btn btn-secondary',onClick:vals.addIncomeLogEntry},'Add')),
+              vals.incomeLogVM.map(e=>E('div',{key:e.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:'1px solid var(--color-divider)',fontSize:13}},
+                E('span',{style:e.dotStyle}), E('span',null,e.catName), E('span',{className:'text-muted'},e.date), E('b',{style:{marginLeft:'auto'}},'$'+e.amount), E('button',{className:'cmd-x-btn',onClick:e.remove},'×')))) };
         }
         case 'fStocks': {
           return { condensed: E('div',null, shortList(vals.stocksVM,3,s=>E('div',{key:s.id,style:{fontSize:12,display:'flex',justifyContent:'space-between'}}, E('span',null,s.symbol), E('span',null,'$'+(s.todayValue===''?'—':s.todayValue)))),
               E('div',{style:{fontSize:12,fontWeight:600,marginTop:4}},'Total: $'+vals.stocksTotalValue)),
             full: E('div',null,
-              E('p',{className:'text-muted',style:{fontSize:11,marginBottom:6}},'Log each stock\'s value for '+vals.viewDateLabel+' — the graph tile plots these over time.'),
+              E('p',{className:'text-muted',style:{fontSize:11,marginBottom:6}},'Log each investment\'s value for '+vals.viewDateLabel+' — the graph tile plots these over time.'),
               vals.stocksVM.map(s=>E('div',{key:s.id,style:{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid var(--color-divider)'}},
                 E('input',{className:'cmd-txt',style:{maxWidth:90,fontWeight:600},defaultValue:s.symbol,onBlur:s.rename}),
                 E('span',{className:'text-muted',style:{fontSize:12}},'$'),
@@ -1883,7 +1934,7 @@ class Component extends DCLogic {
                     E('input',{type:'checkbox',className:'cmd-chk',style:{width:14,height:14},checked:!hiddenIds.includes(s.id),onChange:()=>this.toggleUi('stockVis-'+s.id,'hidden',false)}),
                     E('span',{style:{width:10,height:10,borderRadius:2,background:HABIT_COLORS[idx%HABIT_COLORS.length],display:'inline-block',flex:'none'}}),
                     s.symbol)))),
-              E('p',{className:'text-muted',style:{fontSize:11,marginTop:6}},'Dashed line = average across all your stocks. Total value: $'+vals.stocksTotalValue)) };
+              E('p',{className:'text-muted',style:{fontSize:11,marginTop:6}},'Dashed line = average across all your investments. Total value: $'+vals.stocksTotalValue)) };
         }
         case 'dayDevotion': {
           const met = devoMetCount(todayDevo);
@@ -1993,18 +2044,21 @@ class Component extends DCLogic {
                 E('input',{className:'input',style:{fontSize:12},placeholder:'Add exercise…',onKeyDown:day.addExerciseKey}))))) };
         }
         case 'bPr': {
-          return { condensed: E('div',null, E('label',{style:{display:'flex',alignItems:'center',gap:6,fontSize:11}}, E('input',{type:'checkbox',className:'cmd-chk',style:{width:12,height:12},checked:vals.prEnabled,onChange:vals.togglePr}),'enabled'),
-              vals.prEnabled ? shortList(vals.prVM,2,pr=>E('div',{key:pr.name,style:{fontSize:12,marginTop:4}}, E('b',null,pr.name),' ', pr.entries.length?E('span',{className:'text-muted'},pr.entries[pr.entries.length-1].weight):null)) : null),
-            full: E('div',null, E('label',{style:{display:'flex',alignItems:'center',gap:8,fontSize:13}}, E('input',{type:'checkbox',className:'cmd-chk',checked:vals.prEnabled,onChange:vals.togglePr}),'PR log enabled'),
-              vals.prEnabled ? E('div',null,
-                vals.prVM.map(pr=>E('div',{key:pr.name,style:{marginTop:8}}, E('b',{style:{fontSize:13}},pr.name),
-                  E('div',{style:{display:'flex',gap:10,flexWrap:'wrap',fontSize:12,marginTop:4}}, pr.entries.map((e,i)=>E('span',{key:i,className:'tag tag-neutral'}, e.date+': '+[e.weight?e.weight+' lb':null, e.time?e.time:null].filter(Boolean).join(' · ')))))),
-                E('h6',{className:'text-muted',style:{marginTop:12,marginBottom:6}},'Add a PR'),
-                E('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
-                  E('input',{className:'input',id:'prNameDraft',placeholder:'Name, e.g. Bench Press',style:{flex:'1 1 140px'}}),
-                  E('input',{className:'input',id:'prWeightDraft',placeholder:'Weight (optional)',style:{width:120}}),
-                  E('input',{className:'input',id:'prTimeDraft',placeholder:'Time (optional)',style:{width:110}}),
-                  E('button',{className:'btn btn-secondary',onClick:vals.addCustomPr},'Add'))) : null) };
+          // The log itself always shows — prEnabled only controls the convenience "Log top
+          // set as PR" button on the workout program tile, it shouldn't hide your own PRs.
+          return { condensed: vals.prVM.length ? shortList(vals.prVM,2,pr=>E('div',{key:pr.name,style:{fontSize:12,marginTop:2}}, E('b',null,pr.name),' ', pr.entries.length?E('span',{className:'text-muted'},pr.entries[pr.entries.length-1].weight||pr.entries[pr.entries.length-1].time):null)) : E('p',{className:'text-muted',style:{fontSize:12}},'No PRs yet.'),
+            full: E('div',null,
+              vals.prVM.map(pr=>E('div',{key:pr.name,style:{marginTop:8}}, E('b',{style:{fontSize:13}},pr.name),
+                E('div',{style:{display:'flex',gap:10,flexWrap:'wrap',fontSize:12,marginTop:4}}, pr.entries.map((e,i)=>E('span',{key:i,className:'tag tag-neutral'}, e.date+': '+[e.weight?e.weight+' lb':null, e.time?e.time:null].filter(Boolean).join(' · ')))))),
+              E('h6',{className:'text-muted',style:{marginTop:12,marginBottom:6}},'Add a PR'),
+              E('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
+                E('input',{className:'input',id:'prNameDraft',placeholder:'Name, e.g. Bench Press',style:{flex:'1 1 140px'}}),
+                E('input',{className:'input',id:'prWeightDraft',placeholder:'Weight (optional)',style:{width:120}}),
+                E('input',{className:'input',id:'prTimeDraft',placeholder:'Time (optional)',style:{width:110}}),
+                E('button',{className:'btn btn-secondary',onClick:vals.addCustomPr},'Add')),
+              E('label',{style:{display:'flex',alignItems:'center',gap:8,fontSize:12,marginTop:14,paddingTop:10,borderTop:'1px solid var(--color-divider)',cursor:'pointer'}},
+                E('input',{type:'checkbox',className:'cmd-chk',style:{width:14,height:14},checked:vals.prEnabled,onChange:vals.togglePr}),
+                'Show "Log top set as PR" button on the workout program tile')) };
         }
       }
       return null;
