@@ -21,14 +21,21 @@
     /* the ds bundle's .text-muted mixes at 55% opacity, which reads too faint for small
        count/label text (tab counts, "N/N done", dates) — bump it, more so in dark mode
        where a mid-gray needs to sit closer to the light text color to stay legible. */
-    .text-muted{ color:color-mix(in srgb, var(--color-text) var(--cmd-muted-mix,66%), transparent) !important; }
+    .text-muted{ color:color-mix(in srgb, var(--color-text) var(--cmd-muted-mix,80%), transparent) !important; }
+    /* --color-accent-800/700 are dark navy shades meant for text on a LIGHT background
+       (e.g. inside a pale pill like .tag-accent) — several places use them as plain text
+       straight on the app's own surface (done counts, dates, "X/10" labels), which reads
+       fine in light mode but goes near-invisible dark-navy-on-dark-surface once dark mode
+       flips the page background. --cmd-strong/--cmd-strong-2 default to those same navy
+       shades in light mode, and are pointed at light blues in dark mode instead (below). */
+    :root{ --cmd-strong:var(--color-accent-800); --cmd-strong-2:var(--color-accent-700); }
     /* sticky notes always sit on a light pastel swatch, even in dark mode where the page's
        --color-text flips to near-white — force a dark, legible color so the text doesn't
        vanish against its own background. */
     .cmd-tile[data-kind="sticky"] textarea{ color:#1d1f20 !important; }
     .cmd-chk{ width:18px;height:18px;flex:none;accent-color:var(--color-accent);cursor:pointer; }
     .cmd-x-btn{ background:none;border:none;cursor:pointer;color:color-mix(in srgb, var(--color-text) 45%, transparent);font-size:16px;line-height:1;padding:2px 4px;transition:color .15s ease;flex:none; }
-    .cmd-x-btn:hover{ color:var(--color-accent-800); }
+    .cmd-x-btn:hover{ color:var(--cmd-strong); }
     .cmd-txt{ background:transparent;border:none;border-bottom:1px solid transparent;font:inherit;color:inherit;padding:2px 0;width:100%;transition:border-color .15s ease; }
     .cmd-txt:hover, .cmd-txt:focus{ border-bottom:1px solid var(--color-divider); outline:none; }
     .cmd-num{ width:64px;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:8px;padding:3px 6px;font:inherit;font-size:13px; }
@@ -96,7 +103,7 @@
     .cmd-hero-greeting{ font-family:var(--font-heading);font-size:26px;line-height:1.15; }
     .cmd-hero-streak{ font-size:12px;color:color-mix(in srgb, var(--color-text) 55%, transparent);margin-top:4px;display:flex;align-items:center;gap:5px; }
     .cmd-hero-progress-label{ display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:color-mix(in srgb, var(--color-text) 60%, transparent);margin-bottom:6px; }
-    .cmd-hero-progress-pct{ font-family:var(--font-heading);font-size:15px;color:var(--color-accent-800); }
+    .cmd-hero-progress-pct{ font-family:var(--font-heading);font-size:15px;color:var(--cmd-strong); }
     .cmd-progress-track{ height:12px;background:var(--color-neutral-200);border-radius:6px;overflow:hidden; }
     .cmd-progress-fill{ height:100%;background:linear-gradient(90deg, var(--color-accent-600), var(--color-accent-800));border-radius:6px; }
     .cmd-hero-row2{ display:flex;align-items:center;gap:14px;flex-wrap:wrap; }
@@ -104,7 +111,7 @@
     /* — icon button (reset, etc) — */
     .cmd-icon-btn{ background:var(--color-surface);border:1px solid var(--color-divider);cursor:pointer;border-radius:10px;
       width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:15px;color:var(--color-text);flex:none; }
-    .cmd-icon-btn:hover{ border-color:var(--color-accent);color:var(--color-accent-800); }
+    .cmd-icon-btn:hover{ border-color:var(--color-accent);color:var(--cmd-strong); }
     .cmd-icon-square{ display:block;width:12px;height:12px;border:1.5px solid currentColor;border-radius:2px; }
     .cmd-icon-sync-sq{ position:absolute;display:block;width:11px;height:11px;border:1.5px solid currentColor;border-radius:2px;background:var(--color-surface); }
 
@@ -718,7 +725,16 @@ class Component extends DCLogic {
   addListItem(path,item){ this.update(data=>{ let n=data; for(let i=0;i<path.length-1;i++) n=n[path[i]]; n[path[path.length-1]].push(item); }); }
   removeListItem(path,id){ this.update(data=>{ let n=data; for(let i=0;i<path.length-1;i++) n=n[path[i]]; n[path[path.length-1]]=n[path[path.length-1]].filter(x=>x.id!==id); }); }
   renameListItem(path,id,field,value){ this.update(data=>{ let n=data; for(let i=0;i<path.length-1;i++) n=n[path[i]]; const it=n[path[path.length-1]].find(x=>x.id===id); if(it) it[field]=value; }); }
-  reorderAdHoc(fromId,toId){ if(fromId===toId) return; this.update(data=>{ const arr=data.adHoc; const from=arr.findIndex(x=>x.id===fromId), to=arr.findIndex(x=>x.id===toId); if(from<0||to<0) return; const [moved]=arr.splice(from,1); arr.splice(to,0,moved); }); }
+  // Generic drag-to-reorder for any array-of-{id} addressed by the same [path...] scheme
+  // as addListItem/removeListItem/renameListItem — one implementation for every
+  // reorderable list in the app (tasks, chunks, habits, counters, books, sections…).
+  reorderListItem(path,fromId,toId){ if(fromId===toId) return; this.update(data=>{ let n=data; for(let i=0;i<path.length-1;i++) n=n[path[i]]; const arr=n[path[path.length-1]]; const from=arr.findIndex(x=>x.id===fromId), to=arr.findIndex(x=>x.id===toId); if(from<0||to<0) return; const [moved]=arr.splice(from,1); arr.splice(to,0,moved); }); }
+  dragRowProps(path,id){
+    return { draggable:true,
+      onDragStart:(e)=>{ e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',id); },
+      onDragOver:(e)=>e.preventDefault(),
+      onDrop:(e)=>{ e.preventDefault(); const fromId=e.dataTransfer.getData('text/plain'); if(fromId) this.reorderListItem(path,fromId,id); } };
+  }
 
   toggleDailyDone(id){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.dailyDone[id]=!day.dailyDone[id]; }); }
   toggleAdHoc(id){ this.update(data=>{ const it=data.adHoc.find(x=>x.id===id); if(it) it.done=!it.done; }); }
@@ -859,18 +875,27 @@ class Component extends DCLogic {
   toggleSectionItem(path,sectionId,itemId){ this.update(data=>{ const s=this._sectionsAt(data,path).find(x=>x.id===sectionId); const it=s&&s.items.find(x=>x.id===itemId); if(it) it.done=!it.done; }); }
   setSectionItemText(path,sectionId,itemId,val){ this.update(data=>{ const s=this._sectionsAt(data,path).find(x=>x.id===sectionId); const it=s&&s.items.find(x=>x.id===itemId); if(it) it.text=val; }); }
   removeSectionItem(path,sectionId,itemId){ this.update(data=>{ const s=this._sectionsAt(data,path).find(x=>x.id===sectionId); if(s) s.items=s.items.filter(x=>x.id!==itemId); }); }
+  reorderSectionItem(path,sectionId,fromId,toId){ if(fromId===toId) return; this.update(data=>{ const s=this._sectionsAt(data,path).find(x=>x.id===sectionId); if(!s) return; const arr=s.items; const from=arr.findIndex(x=>x.id===fromId), to=arr.findIndex(x=>x.id===toId); if(from<0||to<0) return; const [moved]=arr.splice(from,1); arr.splice(to,0,moved); }); }
+  dragSectionItemProps(path,sectionId,id){
+    return { draggable:true,
+      onDragStart:(e)=>{ e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',id); },
+      onDragOver:(e)=>e.preventDefault(),
+      onDrop:(e)=>{ e.preventDefault(); const fromId=e.dataTransfer.getData('text/plain'); if(fromId) this.reorderSectionItem(path,sectionId,fromId,id); } };
+  }
   buildNotesSectionsVM(sections,path){
     return (sections||[]).map(s=>({
       id:s.id, title:s.title, collapsed:s.collapsed,
       toggle:()=>this.toggleSection(path,s.id),
       rename:(e)=>this.renameSection(path,s.id,e.target.value),
       remove:()=>this.removeSection(path,s.id),
+      drag:this.dragRowProps(path,s.id),
       doneCount:s.items.filter(i=>i.done).length, totalCount:s.items.length,
       items:s.items.map(it=>({
         id:it.id, text:it.text, done:it.done,
         toggle:()=>this.toggleSectionItem(path,s.id,it.id),
         setText:(e)=>this.setSectionItemText(path,s.id,it.id,e.target.value),
-        remove:()=>this.removeSectionItem(path,s.id,it.id)
+        remove:()=>this.removeSectionItem(path,s.id,it.id),
+        drag:this.dragSectionItemProps(path,s.id,it.id)
       })),
       addItem:()=>{ const el=document.getElementById('noteItemDraft-'+s.id); if(el && el.value.trim()){ this.addSectionItem(path,s.id,el.value.trim()); el.value=''; } }
     }));
@@ -885,14 +910,15 @@ class Component extends DCLogic {
       vm.mode==='quick'
         ? E('textarea',{className:'input',style:{minHeight:110},placeholder:'Write anything — a password, an idea, a reminder…',defaultValue:vm.quickText,onBlur:vm.setQuick})
         : E('div',null,
-            vm.sections.map(s=>E('div',{key:s.id,style:{borderBottom:'1px solid var(--color-divider)',padding:'6px 0'}},
+            vm.sections.map(s=>E('div',{key:s.id,...s.drag,style:{borderBottom:'1px solid var(--color-divider)',padding:'6px 0'}},
               E('div',{style:{display:'flex',alignItems:'center',gap:6,cursor:'pointer'},onClick:s.toggle},
+                E('span',{title:'Drag to reorder',style:{cursor:'grab',opacity:.4,flex:'none',fontSize:11},onClick:(e)=>e.stopPropagation()},'⋮⋮'),
                 E('span',{style:{color:'var(--color-accent)',fontSize:11,width:12,flex:'none'}}, s.collapsed?'▸':'▾'),
                 E('input',{className:'cmd-txt',style:{fontWeight:600,fontSize:13},value:s.title,onClick:(e)=>e.stopPropagation(),onChange:s.rename}),
                 E('span',{className:'text-muted',style:{fontSize:11,flex:'none'}}, s.totalCount?s.doneCount+'/'+s.totalCount:''),
                 E('button',{className:'cmd-x-btn',onClick:(e)=>{e.stopPropagation();s.remove();}},'×')),
               s.collapsed ? null : E('div',{style:{marginTop:4,paddingLeft:18}},
-                s.items.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:6,padding:'2px 0'}},
+                s.items.map(it=>E('div',{key:it.id,...it.drag,style:{display:'flex',alignItems:'center',gap:6,padding:'2px 0'}},
                   E('input',{type:'checkbox',className:'cmd-chk',style:{width:14,height:14},checked:it.done,onChange:it.toggle}),
                   E('input',{className:'cmd-txt',style:{fontSize:12,textDecoration:it.done?'line-through':'none',opacity:it.done?0.55:1},value:it.text,onChange:it.setText}),
                   E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
@@ -1181,7 +1207,7 @@ class Component extends DCLogic {
     const months = []; for(let i=0;i<monthsBack;i++){ const d=new Date(now.getFullYear(), now.getMonth()-i, 1); months.push(d.getFullYear()+'-'+U.pad(d.getMonth()+1)); }
     return E('div',{style:{display:'flex',flexDirection:'column',gap:14,maxHeight:320,overflowY:'auto',paddingRight:4}},
       months.map(mk=>E('div',{key:mk},
-        E('div',{style:{fontSize:11,fontWeight:600,color:'var(--color-accent-700)',marginBottom:4}}, new Date(mk+'-01T12:00:00').toLocaleDateString(undefined,{month:'long',year:'numeric'})),
+        E('div',{style:{fontSize:11,fontWeight:600,color:'var(--cmd-strong-2)',marginBottom:4}}, new Date(mk+'-01T12:00:00').toLocaleDateString(undefined,{month:'long',year:'numeric'})),
         this.buildHeatmapMonth(mk, getPct, '230px'))));
   }
 
@@ -1307,7 +1333,7 @@ class Component extends DCLogic {
     const boxes = nodes.map(n=>{ const p=pos[n.id]; const toggle=()=>this.toggleNode(tab,ci,mi,n.id); const remove=(e)=>{ e.stopPropagation(); this.removeNode(tab,ci,mi,n.id); };
       return E('div',{key:n.id, onClick:toggle, title:n.description||'', style:{position:'absolute', left:p.x, top:p.y, width:NODE_W, height:NODE_H, border:'1px solid var(--color-divider)', borderRadius:'8px', background:n.done?'var(--color-accent-100)':'var(--color-bg)', padding:'6px 8px', fontSize:'12px', cursor:'pointer', overflow:'hidden', boxShadow:'var(--shadow-sm)'}},
         E('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:4}},
-          E('div',{style:{fontWeight:600, color: n.done?'var(--color-accent-800)':'inherit'}}, (n.done?'✓ ':'')+n.title),
+          E('div',{style:{fontWeight:600, color: n.done?'var(--cmd-strong)':'inherit'}}, (n.done?'✓ ':'')+n.title),
           E('button',{className:'cmd-x-btn',style:{padding:0,fontSize:13,lineHeight:1,flex:'none'},onClick:remove,title:'Delete lesson'},'×')));
     });
     return E('div',{style:{position:'relative', width:W, height:H, minWidth:'100%'}}, E('svg',{width:W,height:H,style:{position:'absolute',left:0,top:0}}, lines), boxes);
@@ -1321,7 +1347,7 @@ class Component extends DCLogic {
       const pct = Math.round(done/total*100);
       return E('div',{key:i, style:{display:'flex',alignItems:'center',gap:'10px'}},
         E('div',{style:{border:'1px solid var(--color-divider)', borderRadius:'8px', padding:'10px 14px', minWidth:'140px', background: pct===100?'var(--color-accent-100)':'var(--color-bg)'}},
-          E('div',{style:{fontSize:'11px',color:'var(--color-accent-800)'}}, 'Module '+m.module_number),
+          E('div',{style:{fontSize:'11px',color:'var(--cmd-strong)'}}, 'Module '+m.module_number),
           E('div',{style:{fontWeight:600, fontSize:'13px'}}, m.title),
           E('div',{style:{fontSize:'11px',marginTop:'4px'}}, pct+'%')),
         i<mods.length-1 ? E('span',{style:{color:'var(--color-accent)',fontSize:'20px'}}, '→') : null
@@ -1476,7 +1502,7 @@ class Component extends DCLogic {
 
     const dailyHeatmapPct = (key)=>{ const d = data.days[key]; if(!d) return null; const total = data.dailyRecurring.length; if(!total) return null; const done = data.dailyRecurring.filter(t=>d.dailyDone[t.id]).length; return done/total*100; };
 
-    vals.dailyRecurringVM = data.dailyRecurring.map(t=>({ id:t.id, text:t.text, done: !!day0.dailyDone[t.id], toggle:()=>this.toggleDailyDone(t.id), rename:(e)=>this.renameListItem(['dailyRecurring'],t.id,'text',e.target.value), remove:()=>this.removeListItem(['dailyRecurring'],t.id) })).filter(it=>!hc||!it.done).sort((a,b)=>a.done-b.done);
+    vals.dailyRecurringVM = data.dailyRecurring.map(t=>({ id:t.id, text:t.text, done: !!day0.dailyDone[t.id], toggle:()=>this.toggleDailyDone(t.id), rename:(e)=>this.renameListItem(['dailyRecurring'],t.id,'text',e.target.value), remove:()=>this.removeListItem(['dailyRecurring'],t.id), drag:this.dragRowProps(['dailyRecurring'],t.id) })).filter(it=>!hc||!it.done).sort((a,b)=>a.done-b.done);
     vals.addDailyRecurringKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['dailyRecurring'],{id:U2.uid(),text:e.target.value.trim()}); e.target.value=''; } };
 
     const todayKeyForUrgency = U2.todayKey();
@@ -1490,25 +1516,23 @@ class Component extends DCLogic {
         rename:(e)=>this.renameListItem(['adHoc'],t.id,'text',e.target.value),
         setUrgency:(e)=>{ const v=e.target.value; this.update(d=>{ const it=d.adHoc.find(x=>x.id===t.id); if(it){ it.urgency=v; if(v) it.dueAt=''; } }); },
         setDueAt:(e)=>{ const v=e.target.value; this.update(d=>{ const it=d.adHoc.find(x=>x.id===t.id); if(it){ it.dueAt=v; it.notified=false; if(v) it.urgency=''; } }); },
-        dragStart:(e)=>{ e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',t.id); },
-        dragOver:(e)=>e.preventDefault(),
-        drop:(e)=>{ e.preventDefault(); const fromId=e.dataTransfer.getData('text/plain'); if(fromId) this.reorderAdHoc(fromId,t.id); },
+        drag:this.dragRowProps(['adHoc'],t.id),
         remove:()=>this.removeListItem(['adHoc'],t.id) };
     }).filter(it=>!hc||!it.done).sort((a,b)=>a.done-b.done);
     vals.addAdHocKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['adHoc'],{id:U2.uid(),text:e.target.value.trim(),done:false,urgency:'',dueAt:''}); e.target.value=''; } };
 
     vals.weekdayChunksVM = U2.WEEKDAYS.map(dname=>({ label:dname, notToday: dname!==wd, highlightStyle: dname===wd?'box-shadow: inset 0 0 0 2px var(--color-accent);':'',
-      items:(data.weekdayChunks[dname]||[]).map(it=>({ id:it.id, text:it.text, done: !!day0.wdChunkDone[it.id], toggle:()=>this.toggleWdChunkDone(it.id), rename:(e)=>this.renameListItem(['weekdayChunks',dname],it.id,'text',e.target.value), remove:()=>this.removeListItem(['weekdayChunks',dname],it.id) })).filter(it=>!hc||dname!==wd||!it.done).sort((a,b)=>a.done-b.done),
+      items:(data.weekdayChunks[dname]||[]).map(it=>({ id:it.id, text:it.text, done: !!day0.wdChunkDone[it.id], toggle:()=>this.toggleWdChunkDone(it.id), rename:(e)=>this.renameListItem(['weekdayChunks',dname],it.id,'text',e.target.value), remove:()=>this.removeListItem(['weekdayChunks',dname],it.id), drag:this.dragRowProps(['weekdayChunks',dname],it.id) })).filter(it=>!hc||dname!==wd||!it.done).sort((a,b)=>a.done-b.done),
       addKey:(e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['weekdayChunks',dname],{id:U2.uid(),text:e.target.value.trim()}); e.target.value=''; } } }));
 
     vals.weeklyVM = data.weeklyTasks.map(t=>({ id:t.id, text:t.text, done: !!day0.weeklyDone[t.id], notToday: !t.days.includes(wd), doneToday: !!day0.weeklyDone[t.id], notes: t.notes||'',
       expanded: this.getUi('wk-'+t.id,'open',false), toggleExpand:()=>this.toggleUi('wk-'+t.id,'open',false), expandLabel: this.getUi('wk-'+t.id,'open',false)?'less':'more',
       setNotes:(e)=>this.renameListItem(['weeklyTasks'],t.id,'notes',e.target.value),
-      toggle:()=>this.toggleWeeklyDone(t.id), rename:(e)=>this.renameListItem(['weeklyTasks'],t.id,'text',e.target.value), remove:()=>this.removeListItem(['weeklyTasks'],t.id),
+      toggle:()=>this.toggleWeeklyDone(t.id), rename:(e)=>this.renameListItem(['weeklyTasks'],t.id,'text',e.target.value), remove:()=>this.removeListItem(['weeklyTasks'],t.id), drag:this.dragRowProps(['weeklyTasks'],t.id),
       dayChips: U2.WEEKDAYS.map(d=>({ label:d, style:{background: t.days.includes(d)?'var(--color-accent)':'transparent', color: t.days.includes(d)?'var(--color-bg)':'inherit', border:'1px solid var(--color-divider)', cursor:'pointer'}, toggle:()=>this.toggleWeeklyDay(t.id,d) })) })).filter(it=>!hc||!(it.doneToday && !it.notToday)).sort((a,b)=>a.doneToday-b.doneToday);
     vals.addWeeklyKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['weeklyTasks'],{id:U2.uid(),text:e.target.value.trim(),days:[],notes:''}); e.target.value=''; } };
 
-    vals.chunksVM = U2.CHUNK_NAMES.map(cn=>({ name:cn, items: (data.chunks[cn]||[]).map(it=>({ id:it.id, text:it.text, done: !!day0.chunkDone[it.id], toggle:()=>this.toggleChunkDone(it.id), rename:(e)=>this.renameListItem(['chunks',cn],it.id,'text',e.target.value), remove:()=>this.removeListItem(['chunks',cn],it.id) })).filter(it=>!hc||!it.done).sort((a,b)=>a.done-b.done),
+    vals.chunksVM = U2.CHUNK_NAMES.map(cn=>({ name:cn, items: (data.chunks[cn]||[]).map(it=>({ id:it.id, text:it.text, done: !!day0.chunkDone[it.id], toggle:()=>this.toggleChunkDone(it.id), rename:(e)=>this.renameListItem(['chunks',cn],it.id,'text',e.target.value), remove:()=>this.removeListItem(['chunks',cn],it.id), drag:this.dragRowProps(['chunks',cn],it.id) })).filter(it=>!hc||!it.done).sort((a,b)=>a.done-b.done),
       addKey:(e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['chunks',cn],{id:U2.uid(),text:e.target.value.trim()}); e.target.value=''; } } }));
 
     vals.countersVM = data.counters.map(c=>{ const val = this.getCounterVal(data,bodyDayRaw,c); const step = c.decimals?0.1:1; const open=this.getUi('counter-'+c.id,'open',false);
@@ -1517,7 +1541,7 @@ class Component extends DCLogic {
         inc:()=>this.incCounter(c.id, step, c.decimals), dec:()=>this.incCounter(c.id, -step, c.decimals),
         setValue:(e)=>this.setCounterVal(c.id, e.target.value, c.decimals), setGoal:(e)=>this.setCounterField(c.id,'goal',Number(e.target.value)||1),
         rename:(e)=>this.setCounterField(c.id,'name',e.target.value), setUnit:(e)=>this.setCounterField(c.id,'unit',e.target.value), toggleDecimals:()=>this.toggleCounterDecimals(c.id),
-        remove:()=>this.removeCounter(c.id), barStyle:{height:'100%',width:Math.min(100,(val/(c.goal||1))*100)+'%',background:'var(--color-accent-400)'} };
+        remove:()=>this.removeCounter(c.id), barStyle:{height:'100%',width:Math.min(100,(val/(c.goal||1))*100)+'%',background:'var(--color-accent-400)'}, drag:this.dragRowProps(['counters'],c.id) };
     });
     vals.addCounter = ()=>{ const n=document.getElementById('counterNameDraft'), u=document.getElementById('counterUnitDraft'), g=document.getElementById('counterGoalDraft'); this.addCounter(n.value,u.value,g.value); n.value='';u.value='';g.value=''; };
 
@@ -1548,14 +1572,14 @@ class Component extends DCLogic {
     vals.journalVM = data.journal.map(j=>({ id:j.id, dateLabel:j.dateKey, text:j.text, remove:()=>this.update(d=>{ d.journal=d.journal.filter(x=>x.id!==j.id); }) }));
     vals.addJournal = ()=>{ const el=document.getElementById('journalDraft'); if(el && el.value.trim()){ this.addJournalEntry(el.value.trim()); el.value=''; } };
 
-    vals.booksVM = data.bookList.map(b=>({ id:b.id, title:b.title, author:b.author, status:b.status, renameTitle:(e)=>this.renameListItem(['bookList'],b.id,'title',e.target.value), renameAuthor:(e)=>this.renameListItem(['bookList'],b.id,'author',e.target.value), setStatus:(e)=>this.renameListItem(['bookList'],b.id,'status',e.target.value), remove:()=>this.removeListItem(['bookList'],b.id) }));
+    vals.booksVM = data.bookList.map(b=>({ id:b.id, title:b.title, author:b.author, status:b.status, renameTitle:(e)=>this.renameListItem(['bookList'],b.id,'title',e.target.value), renameAuthor:(e)=>this.renameListItem(['bookList'],b.id,'author',e.target.value), setStatus:(e)=>this.renameListItem(['bookList'],b.id,'status',e.target.value), remove:()=>this.removeListItem(['bookList'],b.id), drag:this.dragRowProps(['bookList'],b.id) }));
     vals.addBook = ()=>{ const t=document.getElementById('bookTitleDraft'), a=document.getElementById('bookAuthorDraft'); if(t.value.trim()){ this.addListItem(['bookList'],{id:U2.uid(),title:t.value.trim(),author:a.value.trim(),status:'to-read'}); t.value=''; a.value=''; } };
 
-    vals.habitsVM = data.habits.map(h=>({ id:h.id, name:h.name, direction:h.direction, todayValue: h.history[viewDate]!==undefined?h.history[viewDate]:0, inc:()=>this.logHabitDelta(h.id,1), dec:()=>this.logHabitDelta(h.id,-1), setValue:(e)=>this.setHabitValue(h.id,e.target.value), rename:(e)=>this.renameListItem(['habits'],h.id,'name',e.target.value), remove:()=>this.removeListItem(['habits'],h.id) }));
+    vals.habitsVM = data.habits.map(h=>({ id:h.id, name:h.name, direction:h.direction, todayValue: h.history[viewDate]!==undefined?h.history[viewDate]:0, inc:()=>this.logHabitDelta(h.id,1), dec:()=>this.logHabitDelta(h.id,-1), setValue:(e)=>this.setHabitValue(h.id,e.target.value), rename:(e)=>this.renameListItem(['habits'],h.id,'name',e.target.value), remove:()=>this.removeListItem(['habits'],h.id), drag:this.dragRowProps(['habits'],h.id) }));
     vals.addHabit = ()=>{ const n=document.getElementById('habitNameDraft'), d=document.getElementById('habitDirDraft'); if(n.value.trim()){ this.addListItem(['habits'],{id:U2.uid(),name:n.value.trim(),direction:d.value,history:{}}); n.value=''; } };
 
     vals.stocksVM = data.stocks.map(s=>({ id:s.id, symbol:s.symbol, todayValue: s.history[viewDate]!==undefined?s.history[viewDate]:'',
-      setValue:(e)=>this.setStockValue(s.id,e.target.value), rename:(e)=>this.renameListItem(['stocks'],s.id,'symbol',e.target.value.toUpperCase()), remove:()=>this.removeListItem(['stocks'],s.id) }));
+      setValue:(e)=>this.setStockValue(s.id,e.target.value), rename:(e)=>this.renameListItem(['stocks'],s.id,'symbol',e.target.value.toUpperCase()), remove:()=>this.removeListItem(['stocks'],s.id), drag:this.dragRowProps(['stocks'],s.id) }));
     vals.addStock = ()=>{ const el=document.getElementById('stockSymbolDraft'); if(el && el.value.trim()){ this.addListItem(['stocks'],{id:U2.uid(),symbol:el.value.trim().toUpperCase(),history:{}}); el.value=''; } };
     vals.stocksTotalValue = data.stocks.reduce((a,s)=>a+this.latestStockValue(s),0).toFixed(2);
 
@@ -1568,7 +1592,7 @@ class Component extends DCLogic {
     const gradientStops = fin.categories.map((c,i)=>{ const val=catTotals[c.id]||0; const start=cum/grand*100; cum+=val; const end=cum/grand*100; return PALETTE[i%PALETTE.length]+' '+start.toFixed(1)+'% '+end.toFixed(1)+'%'; }).join(', ');
     vals.pieStyle = { width:'110px', height:'110px', borderRadius:'50%', background: grand>1?('conic-gradient('+gradientStops+')'):'var(--color-neutral-200)', flex:'none' };
     vals.periodOptions = ['weekly','monthly','lifetime'].map(p=>({ label:p, active: fin.period===p, select:()=>this.update(d=>{d.finances.period=p;}) }));
-    vals.categoryVM = fin.categories.map((c,i)=>({ id:c.id, name:c.name, total: Math.round(catTotals[c.id]||0), dotStyle:{width:'10px',height:'10px',borderRadius:'50%',background:PALETTE[i%PALETTE.length],display:'inline-block'}, rename:(e)=>this.renameListItem(['finances','categories'],c.id,'name',e.target.value), remove:()=>this.removeListItem(['finances','categories'],c.id) }));
+    vals.categoryVM = fin.categories.map((c,i)=>({ id:c.id, name:c.name, total: Math.round(catTotals[c.id]||0), dotStyle:{width:'10px',height:'10px',borderRadius:'50%',background:PALETTE[i%PALETTE.length],display:'inline-block'}, rename:(e)=>this.renameListItem(['finances','categories'],c.id,'name',e.target.value), remove:()=>this.removeListItem(['finances','categories'],c.id), drag:this.dragRowProps(['finances','categories'],c.id) }));
     vals.addCategory = ()=>{ const el=document.getElementById('catNameDraft'); if(el.value.trim()){ this.addListItem(['finances','categories'],{id:U2.uid(),name:el.value.trim()}); el.value=''; } };
     vals.categoryOptions = fin.categories.map(c=>({id:c.id,name:c.name}));
     vals.addTransaction = ()=>{ const cat=document.getElementById('txCatDraft').value, amt=document.getElementById('txAmountDraft').value, dt=document.getElementById('txDateDraft').value; if(cat && amt){ this.addListItem(['finances','transactions'],{id:U2.uid(),catId:cat,amount:Number(amt),date: dt||today}); document.getElementById('txAmountDraft').value=''; } };
@@ -1598,7 +1622,7 @@ class Component extends DCLogic {
       const incGradientStops = fin.incomeCategories.map((c,i)=>{ const val=incCatTotals[c.id]||0; const start=incCum/incGrand*100; incCum+=val; const end=incCum/incGrand*100; return PALETTE[i%PALETTE.length]+' '+start.toFixed(1)+'% '+end.toFixed(1)+'%'; }).join(', ');
       vals.incomePieStyle = { width:'110px', height:'110px', borderRadius:'50%', background: incGrand>1?('conic-gradient('+incGradientStops+')'):'var(--color-neutral-200)', flex:'none' };
       vals.incomePeriodOptions = ['weekly','monthly','lifetime'].map(p=>({ label:p, active: fin.incomePeriod===p, select:()=>this.update(d=>{d.finances.incomePeriod=p;}) }));
-      vals.incomeCategoryVM = fin.incomeCategories.map((c,i)=>({ id:c.id, name:c.name, total: Math.round(incCatTotals[c.id]||0), dotStyle:{width:'10px',height:'10px',borderRadius:'50%',background:PALETTE[i%PALETTE.length],display:'inline-block'}, rename:(e)=>this.renameListItem(['finances','incomeCategories'],c.id,'name',e.target.value), remove:()=>this.removeListItem(['finances','incomeCategories'],c.id) }));
+      vals.incomeCategoryVM = fin.incomeCategories.map((c,i)=>({ id:c.id, name:c.name, total: Math.round(incCatTotals[c.id]||0), dotStyle:{width:'10px',height:'10px',borderRadius:'50%',background:PALETTE[i%PALETTE.length],display:'inline-block'}, rename:(e)=>this.renameListItem(['finances','incomeCategories'],c.id,'name',e.target.value), remove:()=>this.removeListItem(['finances','incomeCategories'],c.id), drag:this.dragRowProps(['finances','incomeCategories'],c.id) }));
       vals.addIncomeCategory = ()=>{ const el=document.getElementById('incCatNameDraft'); if(el.value.trim()){ this.addListItem(['finances','incomeCategories'],{id:U2.uid(),name:el.value.trim()}); el.value=''; } };
       vals.incomeCategoryOptions = fin.incomeCategories.map(c=>({id:c.id,name:c.name}));
       vals.addIncomeLogEntry = ()=>{ const cat=document.getElementById('incCatDraft').value, amt=document.getElementById('incLogAmountDraft').value, dt=document.getElementById('incLogDateDraft').value; if(cat && amt){ this.addListItem(['finances','incomeLog'],{id:U2.uid(),catId:cat,amount:Number(amt),date: dt||todayKeyIL}); document.getElementById('incLogAmountDraft').value=''; } };
@@ -1616,7 +1640,7 @@ class Component extends DCLogic {
     vals.spendingBarStyle = { width:'44px', height: Math.max(4,barSpendTotal/barMax*90)+'px', background:'var(--color-accent-300)' };
     const net = barIncomeTotal - barSpendTotal;
     vals.netLabel = (net>=0?'+$':'-$')+Math.abs(Math.round(net))+' net';
-    vals.netStyle = { fontFamily:'var(--font-heading)', fontSize:'15px', color: net>=0 ? 'var(--color-accent-800)' : '#c96a4f' };
+    vals.netStyle = { fontFamily:'var(--font-heading)', fontSize:'15px', color: net>=0 ? 'var(--cmd-strong)' : '#c96a4f' };
 
     vals.bodyDay = { weight: bodyDayRaw.weight ?? '', calories: bodyDayRaw.calories ?? '', protein: bodyDayRaw.protein ?? '', gym: !!bodyDayRaw.gym,
       setWeight:(e)=>this.update(d=>{this.ensureDay(d,viewDate).weight=e.target.value;}), setCalories:(e)=>this.update(d=>{this.ensureDay(d,viewDate).calories=e.target.value;}), setProtein:(e)=>this.update(d=>{this.ensureDay(d,viewDate).protein=e.target.value;}),
@@ -1638,7 +1662,7 @@ class Component extends DCLogic {
       if(n.value.trim()){ this.addCustomPr(n.value.trim(), w.value.trim(), t.value.trim()); n.value=''; w.value=''; t.value=''; }
     };
     vals.programVM = U2.WORKOUT_DAYS.map(dayName=>({ label:dayName, isToday: dayName===wd, highlightStyle: dayName===wd ? 'box-shadow: inset 0 0 0 2px var(--color-accent);' : '',
-      exercises: (data.body.workoutProgram[dayName]||[]).map(ex=>({ name:ex.name, rename:(e)=>this.renameListItem(['body','workoutProgram',dayName],ex.id,'name',e.target.value), remove:()=>this.removeListItem(['body','workoutProgram',dayName],ex.id),
+      exercises: (data.body.workoutProgram[dayName]||[]).map(ex=>({ id:ex.id, name:ex.name, rename:(e)=>this.renameListItem(['body','workoutProgram',dayName],ex.id,'name',e.target.value), remove:()=>this.removeListItem(['body','workoutProgram',dayName],ex.id), drag:this.dragRowProps(['body','workoutProgram',dayName],ex.id),
         sets: ex.sets.map((st,si)=>({ reps:st.reps, weight:st.weight, setReps:(e)=>this.update(d=>{d.body.workoutProgram[dayName].find(x=>x.id===ex.id).sets[si].reps=e.target.value;}), setWeight:(e)=>this.update(d=>{d.body.workoutProgram[dayName].find(x=>x.id===ex.id).sets[si].weight=e.target.value;}), remove:()=>this.update(d=>{d.body.workoutProgram[dayName].find(x=>x.id===ex.id).sets.splice(si,1);}) })),
         addSet:()=>this.update(d=>{d.body.workoutProgram[dayName].find(x=>x.id===ex.id).sets.push({reps:'',weight:''});}),
         recordPr:()=>{ const exd = data.body.workoutProgram[dayName].find(x=>x.id===ex.id); const top = exd.sets[exd.sets.length-1]; if(top && top.weight) this.update(d=>{ if(!d.body.prLog[ex.name]) d.body.prLog[ex.name]=[]; d.body.prLog[ex.name].push({date:viewDate, weight:top.weight}); }); } })),
@@ -1717,6 +1741,11 @@ class Component extends DCLogic {
       idle: vals.syncToken ? 'Not synced yet' : 'Paste a token to enable sync'
     })[this.state.syncStatus||'idle'];
     vals.syncUnresolved = this.state.syncStatus==='pending' || this.state.syncStatus==='error';
+    // A visible, always-on-every-tab reminder (not just the small dot on the header icon)
+    // that this device has edits the shared gist doesn't have yet. Persists — no auto-dismiss
+    // timer — until the status actually clears; tapping it retries the sync immediately.
+    if(vals.syncUnresolved) vals.dueToasts = vals.dueToasts.concat([{id:'sync-unresolved', text:vals.syncStatusLabel+' (tap to retry)', label:'Not synced', dismiss:()=>this.syncNowToast()}]);
+    vals.hasToasts = vals.dueToasts.length>0;
 
     const exportRange = this.getUi('export','range','today');
     vals.exportRangeOptions = [['yesterday','Yesterday'],['today','Today'],['tomorrow','Tomorrow'],['week','This week']].map(([key,label])=>({
@@ -1749,7 +1778,7 @@ class Component extends DCLogic {
     vals.hiddenTilesVM = hiddenTilesList; vals.hasHiddenTiles = hiddenTilesList.length>0;
 
     vals.rootStyle = Object.assign({minHeight:'100vh',background:'var(--color-bg)',color:'var(--color-text)',fontFamily:'var(--font-body)',paddingBottom:'calc(env(safe-area-inset-bottom) + 24px)'},
-      vals.darkMode ? {'--color-bg':'var(--color-neutral-900)','--color-surface':'var(--color-neutral-800)','--color-text':'var(--color-neutral-100)','--color-divider':'var(--color-neutral-500)','--cmd-muted-mix':'80%'} : {});
+      vals.darkMode ? {'--color-bg':'var(--color-neutral-900)','--color-surface':'var(--color-neutral-800)','--color-text':'var(--color-neutral-100)','--color-divider':'var(--color-neutral-500)','--cmd-muted-mix':'94%','--cmd-strong':'var(--color-accent-300)','--cmd-strong-2':'var(--color-accent-400)'} : {});
 
     const addBlockOfType = (type)=>{ if(type==='chart') this.addChartTile(tabKey); else if(type==='json') this.addJsonTile(tabKey); else this.addMirrorTile(tabKey,type); this.setState({addBlockMenuOpen:false}); };
     vals.blockTypeOptions = [
@@ -1798,7 +1827,7 @@ class Component extends DCLogic {
     //   {condensed, full} React content. Condensed is always short enough to fit its
     //   box by construction; full is the complete, previously-existing editor/view,
     //   rendered inside the shared modal so nothing is ever clipped.
-    const shortList = (items,n,render)=> E('div',null, items.slice(0,n).map(render), items.length>n ? E('div',{style:{fontSize:11,color:'var(--color-accent-700)',marginTop:2}}, '+'+(items.length-n)+' more') : null);
+    const shortList = (items,n,render)=> E('div',null, items.slice(0,n).map(render), items.length>n ? E('div',{style:{fontSize:11,color:'var(--cmd-strong-2)',marginTop:2}}, '+'+(items.length-n)+' more') : null);
     const rowLine = (key,label,done)=> E('div',{key,style:{fontSize:12,padding:'2px 0',display:'flex',gap:6,alignItems:'center'}}, E('span',{style:{opacity:done?0.5:1,textDecoration:done?'line-through':'none',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},label));
 
     const buildBuiltinTileContent = (id, size)=>{
@@ -1815,7 +1844,7 @@ class Component extends DCLogic {
             urgTag(it));
           return {
             condensed: E('div',null,
-              E('div',{style:{fontSize:12,color:'var(--color-accent-800)',marginBottom:6}}, doneN+'/'+totalN+' done'),
+              E('div',{style:{fontSize:12,color:'var(--cmd-strong)',marginBottom:6}}, doneN+'/'+totalN+' done'),
               E('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}},
                 E('div',null, colHead('Extra tasks'), extra.length ? extra.slice(0,5).map(miniRow) : E('p',{className:'text-muted',style:{fontSize:11}},'None')),
                 E('div',null, colHead('Daily'), recurring.length ? recurring.slice(0,5).map(miniRow) : E('p',{className:'text-muted',style:{fontSize:11}},'None')))),
@@ -1823,7 +1852,7 @@ class Component extends DCLogic {
               E('div',null, colHead('Extra tasks'),
                 extra.map(it=>{
                   const open = this.getUi('adhoc-'+it.id,'open',false);
-                  return E('div',{key:it.id,draggable:true,onDragStart:it.dragStart,onDragOver:it.dragOver,onDrop:it.drop,style:{padding:'5px 0',borderBottom:'1px solid var(--color-divider)'}},
+                  return E('div',{key:it.id,...it.drag,style:{padding:'5px 0',borderBottom:'1px solid var(--color-divider)'}},
                     E('div',{style:{display:'flex',alignItems:'center',gap:6}},
                       E('span',{title:'Drag to reorder',style:{cursor:'grab',opacity:.4,flex:'none',fontSize:12}},'⋮⋮'),
                       E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,onChange:it.toggle}),
@@ -1839,7 +1868,8 @@ class Component extends DCLogic {
                 }),
                 E('input',{className:'input',style:{marginTop:8,fontSize:12},placeholder:'Add a task, press Enter',onKeyDown:vals.addAdHocKey})),
               E('div',null, colHead('Daily recurring'),
-                recurring.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}},
+                recurring.map(it=>E('div',{key:it.id,...it.drag,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}},
+                  E('span',{title:'Drag to reorder',style:{cursor:'grab',opacity:.4,flex:'none',fontSize:12}},'⋮⋮'),
                   E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,onChange:it.toggle}), E('input',{className:'cmd-txt',style:{fontSize:13},defaultValue:it.text,onBlur:it.rename}), E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
                 E('input',{className:'input',style:{marginTop:8,fontSize:12},placeholder:'Add recurring task, press Enter',onKeyDown:vals.addDailyRecurringKey})))
           };
@@ -1847,21 +1877,23 @@ class Component extends DCLogic {
         case 'dWeekdayChunks': {
           const todayWc = vals.weekdayChunksVM.find(w=>!w.notToday);
           const doneN = todayWc.items.filter(i=>i.done).length;
-          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--color-accent-800)',marginBottom:4}}, todayWc.label+' — '+doneN+'/'+todayWc.items.length),
+          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--cmd-strong)',marginBottom:4}}, todayWc.label+' — '+doneN+'/'+todayWc.items.length),
               shortList(todayWc.items,3,it=>rowLine(it.id,it.text,it.done))),
             full: E('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:12}},
               vals.weekdayChunksVM.map(wc=>E('div',{key:wc.label,style:{border:'1px solid var(--color-divider)',borderRadius:'8px',padding:8,...(wc.notToday?{}:{boxShadow:'inset 0 0 0 2px var(--color-accent)'})}},
                 E('h6',null,wc.label),
-                wc.items.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:6,padding:'3px 0'}},
+                wc.items.map(it=>E('div',{key:it.id,...it.drag,style:{display:'flex',alignItems:'center',gap:6,padding:'3px 0'}},
+                  E('span',{title:'Drag to reorder',style:{cursor:'grab',opacity:.4,flex:'none',fontSize:11}},'⋮⋮'),
                   E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,disabled:wc.notToday,onChange:it.toggle}), E('input',{className:'cmd-txt',style:{fontSize:12},defaultValue:it.text,onBlur:it.rename}), E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
                 E('input',{className:'input',style:{marginTop:6,fontSize:12},placeholder:'Add…',onKeyDown:wc.addKey})))) };
         }
         case 'dWeekly': {
           const doneN = vals.weeklyVM.filter(w=>w.doneToday && !w.notToday).length;
-          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--color-accent-800)',marginBottom:4}}, doneN+'/'+vals.weeklyVM.filter(w=>!w.notToday).length+' today'),
+          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--cmd-strong)',marginBottom:4}}, doneN+'/'+vals.weeklyVM.filter(w=>!w.notToday).length+' today'),
               shortList(vals.weeklyVM,3,wt=>rowLine(wt.id,wt.text+' ('+wt.dayChips.filter(d=>d.style.background!=='transparent').map(d=>d.label).join(',')+')',wt.doneToday))),
-            full: E('div',null, vals.weeklyVM.map(wt=>E('div',{key:wt.id,style:{padding:'8px 0',borderBottom:'1px solid var(--color-divider)'}},
+            full: E('div',null, vals.weeklyVM.map(wt=>E('div',{key:wt.id,...wt.drag,style:{padding:'8px 0',borderBottom:'1px solid var(--color-divider)'}},
               E('div',{style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+                E('span',{title:'Drag to reorder',style:{cursor:'grab',opacity:.4,flex:'none',fontSize:12}},'⋮⋮'),
                 E('input',{type:'checkbox',className:'cmd-chk',checked:wt.doneToday,disabled:wt.notToday,onChange:wt.toggle}), E('input',{className:'cmd-txt',style:{maxWidth:160},defaultValue:wt.text,onBlur:wt.rename}),
                 E('div',{style:{display:'flex',gap:4}}, wt.dayChips.map(dc=>E('button',{key:dc.label,className:'tag',style:dc.style,onClick:dc.toggle},dc.label))),
                 E('button',{className:'btn btn-ghost',style:{fontSize:11},onClick:wt.toggleExpand},wt.expandLabel),
@@ -1873,7 +1905,8 @@ class Component extends DCLogic {
           return { condensed: E('div',null, vals.chunksVM.map(c=>E('div',{key:c.name,style:{fontSize:12,padding:'2px 0',display:'flex',justifyContent:'space-between'}}, E('span',null,c.name), E('span',{className:'text-muted'}, c.items.filter(i=>i.done).length+'/'+c.items.length)))),
             full: E('div',{style:{display:'flex',flexDirection:'column',gap:12}}, vals.chunksVM.map(chunk=>E('div',{key:chunk.name,style:{border:'1px solid var(--color-divider)',borderRadius:'8px',padding:10}},
               E('h6',{style:{marginBottom:8}},chunk.name),
-              chunk.items.map(it=>E('div',{key:it.id,style:{display:'flex',alignItems:'center',gap:6,padding:'3px 0'}},
+              chunk.items.map(it=>E('div',{key:it.id,...it.drag,style:{display:'flex',alignItems:'center',gap:6,padding:'3px 0'}},
+                E('span',{title:'Drag to reorder',style:{cursor:'grab',opacity:.4,flex:'none',fontSize:12}},'⋮⋮'),
                 E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,onChange:it.toggle}), E('input',{className:'cmd-txt',style:{fontSize:13},defaultValue:it.text,onBlur:it.rename}), E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
               E('input',{className:'input',style:{marginTop:6,fontSize:12},placeholder:'Add…',onKeyDown:chunk.addKey})))) };
         }
@@ -1886,8 +1919,9 @@ class Component extends DCLogic {
                 E('button',{className:'btn btn-secondary btn-icon',style:{width:20,height:20,fontSize:12,flex:'none'},onClick:(e)=>{e.stopPropagation();c.inc();}},'+')),
               E('div',{style:{height:4,background:'var(--color-neutral-200)',borderRadius:2,overflow:'hidden',marginTop:2}}, E('div',{style:c.barStyle})))),
             full: E('div',{style:{display:'flex',gap:16,flexWrap:'wrap'}},
-              E('div',{style:{flex:2,minWidth:200,display:'flex',flexDirection:'column',gap:8}}, vals.countersVM.map(c=>E('div',{key:c.id,style:{border:'1px solid var(--color-divider)',borderRadius:10,padding:'8px 10px'}},
+              E('div',{style:{flex:2,minWidth:200,display:'flex',flexDirection:'column',gap:8}}, vals.countersVM.map(c=>E('div',{key:c.id,...c.drag,style:{border:'1px solid var(--color-divider)',borderRadius:10,padding:'8px 10px'}},
                 E('div',{style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+                  E('span',{title:'Drag to reorder',style:{cursor:'grab',opacity:.4,flex:'none',fontSize:12}},'⋮⋮'),
                   E('input',{className:'cmd-txt',style:{fontWeight:600,maxWidth:110},defaultValue:c.name,onBlur:c.rename}),
                   E('button',{className:'btn btn-secondary btn-icon',onClick:c.dec},'−'), E('input',{className:'cmd-num',type:'number',step:c.step,defaultValue:c.value,onBlur:c.setValue}), E('button',{className:'btn btn-secondary btn-icon',onClick:c.inc},'+'),
                   E('span',{className:'text-muted',style:{fontSize:12}}, '/ '+c.goal+' '+c.unit),
@@ -1910,7 +1944,8 @@ class Component extends DCLogic {
               E('button',{className:'btn btn-secondary btn-icon',style:{width:20,height:20,fontSize:12,flex:'none'},onClick:(e)=>{e.stopPropagation();h.dec();}},'−'),
               E('span',{className:'tag tag-neutral',style:{fontSize:10,flex:'none'}},h.todayValue),
               E('button',{className:'btn btn-secondary btn-icon',style:{width:20,height:20,fontSize:12,flex:'none'},onClick:(e)=>{e.stopPropagation();h.inc();}},'+'))),
-            full: E('div',null, vals.habitsVM.map(h=>E('div',{key:h.id,style:{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'1px solid var(--color-divider)',flexWrap:'wrap'}},
+            full: E('div',null, vals.habitsVM.map(h=>E('div',{key:h.id,...h.drag,style:{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:'1px solid var(--color-divider)',flexWrap:'wrap'}},
+                E('span',{title:'Drag to reorder',style:{cursor:'grab',opacity:.4,flex:'none',fontSize:12}},'⋮⋮'),
                 E('input',{className:'cmd-txt',style:{width:140,flex:'none'},defaultValue:h.name,onBlur:h.rename}), E('span',{className:'tag tag-neutral',style:{flex:'none'}},h.direction),
                 E('button',{className:'btn btn-secondary btn-icon',onClick:h.dec},'−'), E('input',{className:'cmd-num',type:'number',defaultValue:h.todayValue,onBlur:h.setValue}), E('button',{className:'btn btn-secondary btn-icon',onClick:h.inc},'+'),
                 E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:h.remove},'×'))),
@@ -1958,7 +1993,7 @@ class Component extends DCLogic {
               E('div',null, shortList(vals.categoryVM,5,c=>E('div',{key:c.id,style:{display:'flex',alignItems:'center',gap:6,fontSize:12,padding:'2px 0'}}, E('span',{style:c.dotStyle}), E('span',null,c.name), E('span',{className:'text-muted',style:{marginLeft:'auto'}},'$'+c.total))))),
             full: E('div',null, E('div',{className:'seg',style:{margin:'8px 0'}}, vals.periodOptions.map(p=>E('label',{key:p.label,className:'seg-opt'}, E('input',{type:'radio',name:'period',checked:p.active,onChange:p.select}), E('span',{className:'dot'}), p.label))),
               E('div',{style:{display:'flex',gap:16,flexWrap:'wrap',alignItems:'center'}}, E('div',{style:vals.pieStyle}),
-                E('div',{style:{minWidth:180}}, vals.categoryVM.map(c=>E('div',{key:c.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}},
+                E('div',{style:{minWidth:180}}, vals.categoryVM.map(c=>E('div',{key:c.id,...c.drag,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}},
                   E('span',{style:c.dotStyle}), E('input',{className:'cmd-txt',style:{maxWidth:100},defaultValue:c.name,onBlur:c.rename}), E('span',{className:'text-muted',style:{fontSize:12,marginLeft:'auto'}},'$'+c.total), E('button',{className:'cmd-x-btn',onClick:c.remove},'×'))),
                   E('div',{style:{display:'flex',gap:6,marginTop:8}}, E('input',{className:'input',id:'catNameDraft',placeholder:'New category'}), E('button',{className:'btn btn-secondary',onClick:vals.addCategory},'Add')))),
               E('h6',{className:'text-muted',style:{marginTop:14}},'Log a transaction'),
@@ -1977,14 +2012,14 @@ class Component extends DCLogic {
             full: E('div',null,
               E('div',{className:'seg',style:{margin:'8px 0'}}, vals.incomePeriodOptions.map(p=>E('label',{key:p.label,className:'seg-opt'}, E('input',{type:'radio',name:'incperiod',checked:p.active,onChange:p.select}), E('span',{className:'dot'}), p.label))),
               E('div',{style:{display:'flex',gap:16,flexWrap:'wrap',alignItems:'center'}}, E('div',{style:vals.incomePieStyle}),
-                E('div',{style:{minWidth:180}}, vals.incomeCategoryVM.map(c=>E('div',{key:c.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}},
+                E('div',{style:{minWidth:180}}, vals.incomeCategoryVM.map(c=>E('div',{key:c.id,...c.drag,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}},
                   E('span',{style:c.dotStyle}), E('input',{className:'cmd-txt',style:{maxWidth:100},defaultValue:c.name,onBlur:c.rename}), E('span',{className:'text-muted',style:{fontSize:12,marginLeft:'auto'}},'$'+c.total), E('button',{className:'cmd-x-btn',onClick:c.remove},'×'))),
                   E('div',{style:{display:'flex',gap:6,marginTop:8}}, E('input',{className:'input',id:'incCatNameDraft',placeholder:'New source'}), E('button',{className:'btn btn-secondary',onClick:vals.addIncomeCategory},'Add')))),
               E('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,padding:'8px 0',borderTop:'1px solid var(--color-divider)',borderBottom:'1px solid var(--color-divider)',margin:'14px 0 8px'}},
                 statCol('This week',vals.incomeWeekTotal), statCol('This month',vals.incomeMonthTotal), statCol('Lifetime',vals.incomeLifetimeTotal)),
               E('div',{style:{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:10}},
                 E('span',{className:'text-muted'},'Lifetime net (income − spending)'),
-                E('b',{style:{color: Number(vals.lifetimeNet)>=0?'var(--color-accent-800)':'#c96a4f'}},'$'+vals.lifetimeNet)),
+                E('b',{style:{color: Number(vals.lifetimeNet)>=0?'var(--cmd-strong)':'#c96a4f'}},'$'+vals.lifetimeNet)),
               E('h6',{className:'text-muted',style:{marginTop:14}},'Log income'),
               E('div',{style:{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}},
                 E('select',{className:'input',style:{width:'auto'},id:'incCatDraft'}, vals.incomeCategoryOptions.map(c=>E('option',{key:c.id,value:c.id},c.name))),
@@ -1998,7 +2033,8 @@ class Component extends DCLogic {
               E('div',{style:{fontSize:12,fontWeight:600,marginTop:4}},'Total: $'+vals.stocksTotalValue)),
             full: E('div',null,
               E('p',{className:'text-muted',style:{fontSize:11,marginBottom:6}},'Log each investment\'s value for '+vals.viewDateLabel+' — the graph tile plots these over time.'),
-              vals.stocksVM.map(s=>E('div',{key:s.id,style:{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid var(--color-divider)'}},
+              vals.stocksVM.map(s=>E('div',{key:s.id,...s.drag,style:{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid var(--color-divider)'}},
+                E('span',{title:'Drag to reorder',style:{cursor:'grab',opacity:.4,flex:'none',fontSize:12}},'⋮⋮'),
                 E('input',{className:'cmd-txt',style:{maxWidth:90,fontWeight:600},defaultValue:s.symbol,onBlur:s.rename}),
                 E('span',{className:'text-muted',style:{fontSize:12}},'$'),
                 E('input',{className:'cmd-num',style:{width:90},type:'number',defaultValue:s.todayValue,onBlur:s.setValue}),
@@ -2023,8 +2059,8 @@ class Component extends DCLogic {
         }
         case 'dayDevotion': {
           const met = devoMetCount(todayDevo);
-          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--color-accent-800)'}}, met+'/10 today'),
-              todayDevo.memoryVerse ? E('div',{style:{fontSize:11,color:'var(--color-accent-700)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, todayDevo.memoryVerse) : null),
+          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--cmd-strong)'}}, met+'/10 today'),
+              todayDevo.memoryVerse ? E('div',{style:{fontSize:11,color:'var(--cmd-strong-2)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, todayDevo.memoryVerse) : null),
             full: E('div',null,
               E('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',maxWidth:280}},
                 E('button',{className:'btn btn-ghost',onClick:vals.viewDatePrev},'‹'), E('b',{style:{fontFamily:'var(--font-heading)'}},vals.viewDateLabel), E('button',{className:'btn btn-ghost',onClick:vals.viewDateToday},'Today'), E('button',{className:'btn btn-ghost',onClick:vals.viewDateNext},'›')),
@@ -2035,15 +2071,17 @@ class Component extends DCLogic {
                 E('div',{className:'field',style:{gridColumn:'1/-1'}}, E('label',null,'One new idea from Scripture'), E('textarea',{className:'input',defaultValue:vals.devo.newIdea,onBlur:vals.devo.setNewIdea})),
                 E('div',null, E('label',{className:'text-muted',style:{fontSize:12}},'Prayer requests (3)'), vals.devo.reqEl),
                 E('div',null, E('label',{className:'text-muted',style:{fontSize:12}},'Thankful for (3)'), vals.devo.thankEl)),
-              E('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginTop:10}},
-                E('div',null, E('h6',{className:'text-muted',style:{fontSize:11,margin:'0 0 4px'}},'Past prayer requests'),
-                  vals.prayerHistory.length ? E('div',{style:{maxHeight:120,overflowY:'auto',display:'flex',flexDirection:'column',gap:3}},
-                    vals.prayerHistory.map(h=>E('div',{key:h.id,style:{fontSize:12}}, E('span',{className:'text-muted'},h.dateLabel+': '), h.text)))
-                    : E('p',{className:'text-muted',style:{fontSize:11}},'None yet.')),
-                E('div',null, E('h6',{className:'text-muted',style:{fontSize:11,margin:'0 0 4px'}},'Past thankful entries'),
-                  vals.thankfulHistory.length ? E('div',{style:{maxHeight:120,overflowY:'auto',display:'flex',flexDirection:'column',gap:3}},
-                    vals.thankfulHistory.map(h=>E('div',{key:h.id,style:{fontSize:12}}, E('span',{className:'text-muted'},h.dateLabel+': '), h.text)))
-                    : E('p',{className:'text-muted',style:{fontSize:11}},'None yet.'))),
+              E('div',{style:{marginTop:14,padding:10,border:'1px solid var(--color-divider)',borderRadius:8,background:'var(--color-surface)'}},
+                E('div',{style:{fontWeight:600,fontSize:13,marginBottom:8}},'📜 History — past prayer requests & thankful entries'),
+                E('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}},
+                  E('div',null, E('h6',{style:{fontSize:12,fontWeight:600,margin:'0 0 4px'}},'Prayer requests ('+vals.prayerHistory.length+')'),
+                    vals.prayerHistory.length ? E('div',{style:{maxHeight:120,overflowY:'auto',display:'flex',flexDirection:'column',gap:3}},
+                      vals.prayerHistory.map(h=>E('div',{key:h.id,style:{fontSize:12}}, E('b',{style:{color:'var(--cmd-strong)'}},h.dateLabel+': '), h.text)))
+                      : E('p',{className:'text-muted',style:{fontSize:12}},'None yet — add some above and they\'ll build up here day by day.')),
+                  E('div',null, E('h6',{style:{fontSize:12,fontWeight:600,margin:'0 0 4px'}},'Thankful for ('+vals.thankfulHistory.length+')'),
+                    vals.thankfulHistory.length ? E('div',{style:{maxHeight:120,overflowY:'auto',display:'flex',flexDirection:'column',gap:3}},
+                      vals.thankfulHistory.map(h=>E('div',{key:h.id,style:{fontSize:12}}, E('b',{style:{color:'var(--cmd-strong)'}},h.dateLabel+': '), h.text)))
+                      : E('p',{className:'text-muted',style:{fontSize:12}},'None yet — add some above and they\'ll build up here day by day.')))),
               E('div',{style:{marginTop:14,paddingTop:12,borderTop:'1px solid var(--color-divider)'}}, E('h6',{style:{marginBottom:8}},'Chapters read today'),
                 E('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:10}}, vals.devo.chapterInputs.map(ci=>E('div',{key:ci.key,className:'field'},
                   E('label',null,ci.label), E('input',{className:'cmd-num',style:{width:'100%'},type:'number',min:0,defaultValue:ci.value,onBlur:ci.setValue}))))),
@@ -2060,17 +2098,18 @@ class Component extends DCLogic {
               E('button',{className:'btn btn-secondary',style:{marginTop:6},onClick:vals.resetBibleProgress},'Reset Bible progress')) };
         }
         case 'dayJournal': {
-          return { condensed: vals.journalVM.length ? E('div',null, E('div',{style:{fontSize:11,color:'var(--color-accent-800)'}},vals.journalVM[0].dateLabel), E('p',{style:{fontSize:12,margin:'2px 0 0',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical'}},vals.journalVM[0].text), vals.journalVM.length>1?E('div',{style:{fontSize:11,color:'var(--color-accent-700)'}},'+'+(vals.journalVM.length-1)+' more entries'):null) : E('p',{className:'text-muted',style:{fontSize:12}},'No entries yet.'),
+          return { condensed: vals.journalVM.length ? E('div',null, E('div',{style:{fontSize:11,color:'var(--cmd-strong)'}},vals.journalVM[0].dateLabel), E('p',{style:{fontSize:12,margin:'2px 0 0',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical'}},vals.journalVM[0].text), vals.journalVM.length>1?E('div',{style:{fontSize:11,color:'var(--cmd-strong-2)'}},'+'+(vals.journalVM.length-1)+' more entries'):null) : E('p',{className:'text-muted',style:{fontSize:12}},'No entries yet.'),
             full: E('div',null, E('textarea',{className:'input',style:{marginTop:4},placeholder:'Write an entry… (logs to the previous day until your day-start hour, see Settings)',id:'journalDraft'}),
               E('button',{className:'btn btn-secondary btn-block',onClick:vals.addJournal},'Add entry'),
               vals.journalVM.map(j=>E('div',{key:j.id,style:{borderTop:'1px solid var(--color-divider)',padding:'8px 0'}},
-                E('div',{style:{display:'flex',justifyContent:'space-between'}}, E('b',{style:{fontSize:12,color:'var(--color-accent-800)'}},j.dateLabel), E('button',{className:'cmd-x-btn',onClick:j.remove},'×')),
+                E('div',{style:{display:'flex',justifyContent:'space-between'}}, E('b',{style:{fontSize:12,color:'var(--cmd-strong)'}},j.dateLabel), E('button',{className:'cmd-x-btn',onClick:j.remove},'×')),
                 E('p',{style:{margin:'4px 0 0',fontSize:14}},j.text)))) };
         }
         case 'dayBooks': {
           const counts = {'to-read':0,reading:0,done:0}; vals.booksVM.forEach(b=>{ counts[b.status]=(counts[b.status]||0)+1; });
           return { condensed: E('div',{style:{fontSize:12,display:'flex',gap:8,flexWrap:'wrap'}}, Object.keys(counts).map(k=>E('span',{key:k,className:'tag tag-neutral',style:{fontSize:10}},counts[k]+' '+k))),
-            full: E('div',null, vals.booksVM.map(b=>E('div',{key:b.id,style:{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid var(--color-divider)'}},
+            full: E('div',null, vals.booksVM.map(b=>E('div',{key:b.id,...b.drag,style:{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid var(--color-divider)'}},
+                E('span',{title:'Drag to reorder',style:{cursor:'grab',opacity:.4,flex:'none',fontSize:12}},'⋮⋮'),
                 E('input',{className:'cmd-txt',style:{maxWidth:220,fontWeight:600},defaultValue:b.title,onBlur:b.renameTitle}), E('input',{className:'cmd-txt',style:{maxWidth:180},defaultValue:b.author,onBlur:b.renameAuthor}),
                 E('select',{className:'input',style:{width:'auto'},defaultValue:b.status,onChange:b.setStatus}, E('option',{value:'to-read'},'to read'),E('option',{value:'reading'},'reading'),E('option',{value:'done'},'done')),
                 E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:b.remove},'×'))),
@@ -2123,13 +2162,13 @@ class Component extends DCLogic {
         }
         case 'bProgram': {
           const todayProg = vals.programVM.find(p=>p.isToday) || vals.programVM[0];
-          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--color-accent-800)',marginBottom:4}},todayProg.label),
+          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--cmd-strong)',marginBottom:4}},todayProg.label),
               shortList(todayProg.exercises,4,ex=>E('div',{key:ex.name,style:{fontSize:12,padding:'2px 0'}},ex.name))),
             full: E('div',null, E('p',{className:'text-muted',style:{fontSize:12}},'This doubles as your session log — edit sets/reps/weight as you go.'),
               E('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))',gap:12}}, vals.programVM.map(day=>E('div',{key:day.label,style:{border:'1px solid var(--color-divider)',borderRadius:8,padding:8,...(day.isToday?{boxShadow:'inset 0 0 0 2px var(--color-accent)'}:{})}},
                 E('h6',null,day.label),
-                day.exercises.map(ex=>E('div',{key:ex.name,style:{marginBottom:8,paddingBottom:8,borderBottom:'1px solid var(--color-divider)'}},
-                  E('div',{style:{display:'flex',alignItems:'center',gap:6}}, E('input',{className:'cmd-txt',style:{fontWeight:600},defaultValue:ex.name,onBlur:ex.rename}), E('button',{className:'cmd-x-btn',onClick:ex.remove},'×')),
+                day.exercises.map(ex=>E('div',{key:ex.id,...ex.drag,style:{marginBottom:8,paddingBottom:8,borderBottom:'1px solid var(--color-divider)'}},
+                  E('div',{style:{display:'flex',alignItems:'center',gap:6}}, E('span',{title:'Drag to reorder',style:{cursor:'grab',opacity:.4,flex:'none',fontSize:12}},'⋮⋮'), E('input',{className:'cmd-txt',style:{fontWeight:600},defaultValue:ex.name,onBlur:ex.rename}), E('button',{className:'cmd-x-btn',onClick:ex.remove},'×')),
                   ex.sets.map((st,si)=>E('div',{key:si,style:{display:'flex',gap:6,alignItems:'center',marginTop:4}},
                     E('input',{className:'input',style:{width:60,fontSize:12},placeholder:'reps',defaultValue:st.reps,onBlur:st.setReps}), E('span',{className:'text-muted',style:{fontSize:11}},'×'),
                     E('input',{className:'input',style:{width:70,fontSize:12},placeholder:'weight',defaultValue:st.weight,onBlur:st.setWeight}), E('button',{className:'cmd-x-btn',onClick:st.remove},'×'))),
@@ -2162,7 +2201,7 @@ class Component extends DCLogic {
       const tc = data.tabContent[tk];
       if(id===prefix+'Resources'){
         return { condensed: tc.resources.length ? shortList(tc.resources,2,r=>E('div',{key:r.id,style:{fontSize:12}},r.title)) : E('p',{className:'text-muted',style:{fontSize:12}},'No resources yet.'),
-          full: E('div',null, tc.resources.map(r=>E('div',{key:r.id,style:{display:'flex',gap:8,alignItems:'center',padding:'4px 0',borderBottom:'1px solid var(--color-divider)'}},
+          full: E('div',null, tc.resources.map(r=>E('div',{key:r.id,...this.dragRowProps(['tabContent',tk,'resources'],r.id),style:{display:'flex',gap:8,alignItems:'center',padding:'4px 0',borderBottom:'1px solid var(--color-divider)'}},
               E('span',{style:{fontSize:13}},r.title), E('a',{href:r.url||'#',target:'_blank',style:{fontSize:12}},r.url), E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:()=>this.removeListItem(['tabContent',tk,'resources'],r.id)},'×'))),
             E('div',{style:{display:'flex',gap:6,marginTop:8}}, E('input',{className:'input',id:'res-title-'+tk,placeholder:'Title'}), E('input',{className:'input',id:'res-url-'+tk,placeholder:'URL'}),
               E('button',{className:'btn btn-secondary',onClick:()=>{ const t=document.getElementById('res-title-'+tk).value, u=document.getElementById('res-url-'+tk).value; if(t){ this.addListItem(['tabContent',tk,'resources'],{id:U2.uid(),title:t,url:u}); document.getElementById('res-title-'+tk).value=''; document.getElementById('res-url-'+tk).value=''; } }},'Add'))) };
@@ -2172,7 +2211,7 @@ class Component extends DCLogic {
       }
       if(id===prefix+'Notion'){
         return { condensed: tc.notionLinks.length ? shortList(tc.notionLinks,2,n=>E('div',{key:n.id,style:{fontSize:12}},n.label)) : E('p',{className:'text-muted',style:{fontSize:12}},'No links yet.'),
-          full: E('div',null, tc.notionLinks.map(n=>E('div',{key:n.id,style:{display:'flex',gap:8,alignItems:'center',padding:'4px 0',borderBottom:'1px solid var(--color-divider)'}},
+          full: E('div',null, tc.notionLinks.map(n=>E('div',{key:n.id,...this.dragRowProps(['tabContent',tk,'notionLinks'],n.id),style:{display:'flex',gap:8,alignItems:'center',padding:'4px 0',borderBottom:'1px solid var(--color-divider)'}},
               E('span',{style:{fontSize:13}},n.label), E('a',{href:n.url,target:'_blank',style:{fontSize:12}},n.url), E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:()=>this.removeListItem(['tabContent',tk,'notionLinks'],n.id)},'×'))),
             E('div',{style:{display:'flex',gap:6,marginTop:8}}, E('input',{className:'input',id:'notion-label-'+tk,placeholder:'Label'}), E('input',{className:'input',id:'notion-url-'+tk,placeholder:'URL'}),
               E('button',{className:'btn btn-secondary',onClick:()=>{ const l=document.getElementById('notion-label-'+tk).value, u=document.getElementById('notion-url-'+tk).value; if(u){ this.addListItem(['tabContent',tk,'notionLinks'],{id:U2.uid(),label:l||u,url:u}); document.getElementById('notion-label-'+tk).value=''; document.getElementById('notion-url-'+tk).value=''; } }},'Add'))) };
