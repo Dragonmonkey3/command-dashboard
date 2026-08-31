@@ -14,9 +14,14 @@
 
   function pad(n){ return n<10 ? '0'+n : ''+n; }
   function dateKey(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+  // "Today" rolls over at a configurable hour (default 6am), not midnight — set from
+  // data.settings.dayStartHour via setDayStartHour() on load/change. Every todayKey() caller
+  // across the app automatically picks this up since it's read at call time, not baked in.
+  let dayStartHour = 6;
+  function setDayStartHour(h){ dayStartHour = (h===undefined||h===null||isNaN(h)) ? 6 : Number(h); }
   function todayKey(){
     const now = new Date();
-    // entries before 6am count toward previous day (journal rule; reused generally for "today" logic)
+    if(now.getHours() < dayStartHour){ const d=new Date(now); d.setDate(d.getDate()-1); return dateKey(d); }
     return dateKey(now);
   }
   function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); }
@@ -46,5 +51,5 @@
     };
   }
 
-  window.CommandUtils = { KJV_TOTAL_CHAPTERS, BIBLE_CATEGORIES, WEEKDAYS, FOCUS_MAP, CHUNK_NAMES, WORKOUT_DAYS, pad, dateKey, todayKey, uid, addDays, weekdayOf, sampleData, blankData };
+  window.CommandUtils = { KJV_TOTAL_CHAPTERS, BIBLE_CATEGORIES, WEEKDAYS, FOCUS_MAP, CHUNK_NAMES, WORKOUT_DAYS, pad, dateKey, todayKey, uid, addDays, weekdayOf, sampleData, blankData, setDayStartHour };
 })();
