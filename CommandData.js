@@ -8,9 +8,20 @@
     {key:'proverbs', label:'Proverbs', target:31}
   ];
   const WEEKDAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const FOCUS_MAP = { Sun:'Bible', Wed:'Bible', Mon:'STEM', Thu:'STEM', Tue:'Civilizational Studies', Fri:'Civilizational Studies', Sat:null };
   const CHUNK_NAMES = ['Wake Up','Morning','Afternoon','Evening','Night'];
   const WORKOUT_DAYS = ['Mon','Tue','Wed','Thu','Fri'];
+  // Fixed weekly Anchor/Micro/Daily study pattern, shown as a 3-row strip on the dashboard.
+  // Each slot names the label shown and which tab it routes to when clicked; `daily` is a
+  // list since weekdays carry two linked activities (German + its retention review).
+  const WEEKLY_SCHEDULE_PATTERN = {
+    Sun:{ anchor:{label:'Bible (protected)',tab:'bible'}, micro:null, daily:[{label:'German',tab:'german'}] },
+    Mon:{ anchor:{label:'STEM',tab:'stem'}, micro:{label:'Bible',tab:'bible'}, daily:[{label:'German',tab:'german'},{label:'retention',tab:'retention'}] },
+    Tue:{ anchor:{label:'Civ/Masc',tab:'civ'}, micro:{label:'STEM',tab:'stem'}, daily:[{label:'German',tab:'german'},{label:'retention',tab:'retention'}] },
+    Wed:{ anchor:{label:'Bible',tab:'bible'}, micro:{label:'Civ/Masc',tab:'civ'}, daily:[{label:'German',tab:'german'},{label:'retention',tab:'retention'}] },
+    Thu:{ anchor:{label:'STEM',tab:'stem'}, micro:{label:'Bible',tab:'bible'}, daily:[{label:'German',tab:'german'},{label:'retention',tab:'retention'}] },
+    Fri:{ anchor:{label:'Civ/Masc',tab:'civ'}, micro:{label:'STEM',tab:'stem'}, daily:[{label:'German',tab:'german'},{label:'retention',tab:'retention'}] },
+    Sat:{ anchor:{label:'3-domain project',tab:'projects'}, micro:null, daily:[{label:'German',tab:'german'}] }
+  };
 
   function pad(n){ return n<10 ? '0'+n : ''+n; }
   function dateKey(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
@@ -51,5 +62,5 @@
     };
   }
 
-  window.CommandUtils = { KJV_TOTAL_CHAPTERS, BIBLE_CATEGORIES, WEEKDAYS, FOCUS_MAP, CHUNK_NAMES, WORKOUT_DAYS, pad, dateKey, todayKey, uid, addDays, weekdayOf, sampleData, blankData, setDayStartHour };
+  window.CommandUtils = { KJV_TOTAL_CHAPTERS, BIBLE_CATEGORIES, WEEKDAYS, CHUNK_NAMES, WORKOUT_DAYS, WEEKLY_SCHEDULE_PATTERN, pad, dateKey, todayKey, uid, addDays, weekdayOf, sampleData, blankData, setDayStartHour };
 })();

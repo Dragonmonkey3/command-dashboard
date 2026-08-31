@@ -170,7 +170,7 @@
             <div class="cmd-hero-streak">{{ streakDays }}-day login streak</div>
           </div>
           <sc-if value="{{ hasFocus }}" hint-placeholder-val="{{ false }}">
-            <button class="tag tag-accent" style="cursor:pointer;border:none;font-size:12px;flex:none" onClick="{{ focusGo }}">{{ focusLabel }}</button>
+            {{ scheduleStripEl }}
           </sc-if>
         </div>
         <div>
@@ -432,6 +432,35 @@ function urgencyMeta(task, todayKey){
   return {rank:5, sortKey:Infinity, label:''};
 }
 
+// Adaptive spaced-repetition scheduler shared by every retention item, regardless of which
+// curriculum it came from (German today; anything else that grows retention_items later).
+// Deliberately NOT a general SM-2 implementation — three flat ratings nudging a stage index
+// and an ease multiplier, matching the fixed [1,3,7,14,30,90]-day ladder when ease_factor
+// sits at its neutral 2.5 and stretching/compressing from there as it drifts.
+function advanceRetention(item, rating, todayKey){
+  item.reviewCount = (item.reviewCount||0)+1;
+  if(item.maxStage===undefined) item.maxStage = item.stage||0;
+  if(rating==='struggled'){
+    item.stage = Math.max(0, (item.stage||0)-1);
+    item.ease_factor = Math.max(1.3, (item.ease_factor||2.5)-0.15);
+  } else if(rating==='easy'){
+    item.stage = (item.stage||0)+1;
+    item.ease_factor = Math.min(3.0, (item.ease_factor||2.5)+0.15);
+    if(item.ease_factor>2.5) item.stage += 1;
+  } else {
+    item.stage = (item.stage||0)+1;
+  }
+  item.stage = Math.max(0, Math.min(RETENTION_BASE_INTERVALS.length-1, item.stage));
+  item.maxStage = Math.max(item.maxStage, item.stage);
+  item.last_reviewed = todayKey;
+  const intervalDays = RETENTION_BASE_INTERVALS[item.stage] * (item.ease_factor/2.5);
+  item.next_due = U.addDays(todayKey, Math.max(1,Math.round(intervalDays)));
+  // Leech: 6+ reviews without ever climbing past stage 2 — it keeps getting "Struggled"
+  // and cycling back down, so surface it instead of looping it forever.
+  item.leech = item.reviewCount>=6 && item.maxStage<=2;
+  return item;
+}
+
 function curriculumTiles(prefix,label){
   return [
     {key:prefix+'Curricula', title:label+' curricula', size:'full'},
@@ -440,6 +469,22 @@ function curriculumTiles(prefix,label){
     {key:prefix+'Notion', title:label+' Notion links', size:'wide'}
   ];
 }
+// Sequential-curriculum study tab tiles (German, Python…) — same 7-tile set and same
+// buildBuiltinTileContent cases for every domain; only the tile titles vary.
+function studyTiles(prefix,bankLabel,patternLabel,resourceLabel){
+  return [
+    {key:prefix+'Import', title:'Curriculum import', size:'wide'},
+    {key:prefix+'Progress', title:'Progress', size:'large'},
+    {key:prefix+'Vocab', title:bankLabel, size:'full'},
+    {key:prefix+'Grammar', title:patternLabel, size:'full'},
+    {key:prefix+'Listen', title:resourceLabel, size:'wide'},
+    {key:prefix+'Notes', title:'Notes', size:'wide'},
+    {key:prefix+'Lesson', title:'Lesson', size:'full'}
+  ];
+}
+const STUDY_DOMAINS = ['german','python'];
+const STUDY_DOMAIN_LABELS = {german:'German', python:'Python'};
+const STUDY_TAB_PREFIX = {german:'g', python:'py'};
 const TAB_BUILTIN_TILES = {
   dashboard: [
     {key:'dTodo', title:'To Do', size:'wide'},
@@ -478,12 +523,21 @@ const TAB_BUILTIN_TILES = {
     {key:'rReminders', title:'Reminders', size:'wide'},
     {key:'rScratch', title:'Notes', size:'wide'},
     {key:'rPicker', title:'Random picker', size:'wide'}
+  ],
+  german: studyTiles('g','Vocabulary bank','Grammar bank','Listen'),
+  python: studyTiles('py','Snippet bank','Pattern bank','Resources'),
+  retention: [
+    {key:'rtColumns', title:'Daily review', size:'full'},
+    {key:'rtFeynman', title:'Feynman spot-check', size:'wide'},
+    {key:'rtCocktail', title:'Weekly cocktail', size:'wide'},
+    {key:'rtLeeches', title:'Needs restructuring', size:'wide'}
   ]
 };
 const TILE_TITLES = {};
 Object.keys(TAB_BUILTIN_TILES).forEach(tk=>TAB_BUILTIN_TILES[tk].forEach(d=>{ TILE_TITLES[d.key]=d.title; }));
-const BUILTIN_TAB_LABELS = {dashboard:'Dashboard',daily:'Daily',finances:'Finances',body:'Body',civ:'Civ Studies',stem:'STEM',bible:'Bible',projects:'Projects',resources:'Resources'};
+const BUILTIN_TAB_LABELS = {dashboard:'Dashboard',daily:'Daily',finances:'Finances',body:'Body',civ:'Civ Studies',stem:'STEM',bible:'Bible',german:'German',python:'Python',retention:'Review',projects:'Projects',resources:'Resources'};
 const CURRICULUM_TAB_PREFIX = { stem:'s', bible:'bi', civ:'c' };
+const RETENTION_BASE_INTERVALS = [1,3,7,14,30,90];
 
 class Component extends DCLogic {
   // Fills in any field a fresh sampleData()/blankData() or an older/imported save might be
@@ -521,6 +575,23 @@ class Component extends DCLogic {
     if(!data.reminders) data.reminders=[];
     if(!data.pinnedNoteSections) data.pinnedNoteSections={};
     if(!data.stocks) data.stocks=[];
+    STUDY_DOMAINS.forEach(key=>{ if(!data[key]) data[key]={curriculum:null, vocabBank:[], grammarBank:[], notes:'', currentLesson:0}; });
+    if(!data.retention) data.retention={days:{}, items:[]};
+    if(!data.retention.days) data.retention.days={};
+    if(!data.retention.items) data.retention.items=[];
+    if(!data.feynmanLog) data.feynmanLog=[];
+    // retention_items pulled in from a completed lesson (or any older save) get their
+    // adaptive-scheduling runtime fields patched in if missing — see the ease-factor
+    // scheduler (advanceRetention) below for how these get updated on each review.
+    data.retention.items.forEach(it=>{
+      if(it.last_reviewed===undefined) it.last_reviewed=null;
+      if(it.next_due===undefined) it.next_due=null;
+      if(it.ease_factor===undefined) it.ease_factor=2.5;
+      if(it.stage===undefined) it.stage=0;
+      if(it.reviewCount===undefined) it.reviewCount=0;
+      if(it.leech===undefined) it.leech=false;
+      if(it.maxStage===undefined) it.maxStage=it.stage||0;
+    });
     if(!data.noteSections){
       data.noteSections = [];
       if(data.scratchPad && data.scratchPad.trim()){
@@ -1120,6 +1191,143 @@ class Component extends DCLogic {
   removeCurriculum(tab,ci){ this.update(data=>{ data.curricula[tab].splice(ci,1); }); }
   addTabBlock(tab,type){ this.update(data=>{ data.tabContent[tab].blocks.push({id:U.uid(),type,content:''}); }); }
 
+  // — Sequential-curriculum study tabs (German, Python — same shape, different domain key) —
+  // ponytail: the exact "8-part lesson" field names come from an external Curriculum
+  // Generator tool this app doesn't control — the lesson-view renderer (buildStudyLessonVM)
+  // reads named fields where the spec is explicit (grammar_points, daily_drills,
+  // retention_items, recall_check, audio_video_resources) and falls back to listing any other
+  // module fields generically, so an unexpected field still shows up instead of vanishing.
+  // `key` is the domain: 'german' or 'python' — both share this exact code path so a third
+  // study tab is just another TAB_BUILTIN_TILES entry + STUDY_DOMAINS entry, no new logic.
+  mergeGrammarPoints(data,key,points){
+    (points||[]).forEach(gp=>{
+      const rule = gp.rule||gp.title||''; if(!rule) return;
+      if(!data[key].grammarBank.some(g=>g.rule===rule)) data[key].grammarBank.push({id:U.uid(),rule,explanation:gp.explanation||'',examples:gp.examples||[],dateAdded:U.todayKey()});
+    });
+  }
+  importStudyCurriculum(key,jsonText){
+    let parsed; try{ parsed = JSON.parse(jsonText); } catch(e){ this.setState({[key+'ImportError']:'Invalid JSON'}); return; }
+    if(parsed.mode!=='sequential'){ this.setState({[key+'ImportError']:'Expected mode:"sequential"'}); return; }
+    this.setState({[key+'ImportError']:null});
+    this.update(data=>{
+      data[key].curriculum = parsed;
+      (parsed.modules||[]).forEach(m=>this.mergeGrammarPoints(data,key,m.grammar_points));
+    });
+  }
+  setStudyNotes(key,val){ this.update(data=>{ data[key].notes=val; }); }
+  addStudyBankEntry(key,term,definition,pronunciation,notionUrl){
+    if(!term||!term.trim()) return;
+    this.update(data=>{
+      if(data[key].vocabBank.some(v=>v.term.toLowerCase()===term.trim().toLowerCase())) return;
+      data[key].vocabBank.push({id:U.uid(),term:term.trim(),definition:definition||'',pronunciation:pronunciation||'',notionUrl:notionUrl||'',dateAdded:U.todayKey()});
+    });
+  }
+  markLessonComplete(key){
+    this.update(data=>{
+      const mods = (data[key].curriculum && data[key].curriculum.modules)||[];
+      const lesson = mods[data[key].currentLesson]; if(!lesson) return;
+      (lesson.retention_items||[]).forEach(ri=>{
+        const term = ri.term||ri.concept||ri.title||''; if(!term) return;
+        if(data.retention.items.some(x=>x.term===term && x.domain===key)) return;
+        data.retention.items.push({id:U.uid(), term, domain:key, requires_feynman:!!ri.requires_feynman,
+          last_reviewed:null, next_due:U.addDays(U.todayKey(),1), ease_factor:2.5, stage:0, maxStage:0, reviewCount:0, leech:false});
+      });
+      this.mergeGrammarPoints(data,key,lesson.grammar_points);
+      data[key].currentLesson += 1;
+    });
+  }
+  // One view-model builder for both German and Python — same tile ids just prefixed
+  // differently (STUDY_TAB_PREFIX), same {condensed,full} cases in buildBuiltinTileContent.
+  buildStudyTabVM(data,key){
+    const g = data[key];
+    const modules = (g.curriculum && g.curriculum.modules) || [];
+    const gDone = Math.min(g.currentLesson, modules.length);
+    const gPct = modules.length ? Math.round(gDone/modules.length*100) : 0;
+    const vm = {
+      hasCurriculum: !!g.curriculum,
+      importError: this.state[key+'ImportError']||'',
+      importSubmit: ()=>{ const el=document.getElementById(key+'JsonDraft'); if(el && el.value.trim()) this.importStudyCurriculum(key,el.value); },
+      progressPieStyle: { width:'110px', height:'110px', borderRadius:'50%',
+        background: modules.length ? ('conic-gradient(var(--color-accent) 0% '+gPct+'%, var(--color-neutral-200) '+gPct+'% 100%)') : 'var(--color-neutral-200)', flex:'none' },
+      progressLabel: modules.length ? (gDone+' / '+modules.length+' lessons · '+gPct+'%') : 'No curriculum imported yet.',
+      vocabVM: g.vocabBank.slice().sort((a,b)=>a.dateAdded.localeCompare(b.dateAdded)).map(v=>({
+        id:v.id, term:v.term, definition:v.definition, pronunciation:v.pronunciation, notionUrl:v.notionUrl,
+        renameTerm:(e)=>this.renameListItem([key,'vocabBank'],v.id,'term',e.target.value),
+        renameDef:(e)=>this.renameListItem([key,'vocabBank'],v.id,'definition',e.target.value),
+        renamePron:(e)=>this.renameListItem([key,'vocabBank'],v.id,'pronunciation',e.target.value),
+        renameUrl:(e)=>this.renameListItem([key,'vocabBank'],v.id,'notionUrl',e.target.value),
+        remove:()=>this.removeListItem([key,'vocabBank'],v.id), drag:this.dragRowProps([key,'vocabBank'],v.id) })),
+      addVocabSubmit: ()=>{
+        const t=document.getElementById(key+'VocabTermDraft'), d=document.getElementById(key+'VocabDefDraft'), p=document.getElementById(key+'VocabPronDraft'), u=document.getElementById(key+'VocabUrlDraft');
+        if(t && t.value.trim()){ this.addStudyBankEntry(key,t.value,d.value,p.value,u.value); t.value='';d.value='';p.value='';u.value=''; }
+      },
+      grammarVM: g.grammarBank.map(gm=>({ id:gm.id, rule:gm.rule, explanation:gm.explanation, examples:gm.examples||[],
+        open:this.getUi(key+'gram-'+gm.id,'open',false), toggleOpen:()=>this.toggleUi(key+'gram-'+gm.id,'open',false),
+        remove:()=>this.removeListItem([key,'grammarBank'],gm.id), drag:this.dragRowProps([key,'grammarBank'],gm.id) })),
+      notes: g.notes, setNotesBlur: (e)=>this.setStudyNotes(key,e.target.value),
+      listenVM: modules.map((m,mi)=>({ key:mi, title:m.title||m.name||('Module '+(mi+1)),
+        resources:(m.audio_video_resources||[]).map((r,ri)=>({ key:ri, title:r.title||r.name||'Untitled', type:r.type||'audio', purpose:r.purpose||'', url:r.url||'' })) })).filter(m=>m.resources.length),
+      lessonLabel: modules.length ? ('Lesson '+Math.min(g.currentLesson+1,modules.length)+' of '+modules.length) : '',
+      hasLesson: !!modules[g.currentLesson],
+      allDone: modules.length>0 && g.currentLesson>=modules.length,
+      markComplete: ()=>this.markLessonComplete(key)
+    };
+    const lesson = modules[g.currentLesson];
+    if(lesson){
+      const KNOWN = ['grammar_points','daily_drills','retention_items','recall_check','audio_video_resources','title','name'];
+      vm.lessonExtraParts = Object.keys(lesson).filter(k=>!KNOWN.includes(k)).map(k=>({
+        key:k, label:k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()),
+        text: Array.isArray(lesson[k]) ? lesson[k].map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' · ') : (lesson[k] && typeof lesson[k]==='object' ? JSON.stringify(lesson[k]) : String(lesson[k]!=null?lesson[k]:''))
+      })).filter(p=>p.text);
+      vm.lessonTitle = lesson.title||lesson.name||vm.lessonLabel;
+      vm.lessonDrillsVM = (lesson.daily_drills||[]).map((d,di)=>{
+        const uiKey = key+'drill-'+g.currentLesson+'-'+di;
+        return { key:di, prompt:d.prompt||d.question||d.title||'', answer:d.answer||d.solution||'', type:d.drill_type||'recognition',
+          revealed: this.getUi(uiKey,'revealed',false), reveal:()=>this.toggleUi(uiKey,'revealed',false) };
+      });
+      vm.lessonRecallCheck = lesson.recall_check ? {
+        question: lesson.recall_check.question||lesson.recall_check.prompt||'', answer: lesson.recall_check.answer||'',
+        revealed: this.getUi(key+'recall-'+g.currentLesson,'revealed',false), reveal:()=>this.toggleUi(key+'recall-'+g.currentLesson,'revealed',false)
+      } : null;
+      vm.lessonGrammarPoints = (lesson.grammar_points||[]).map((gp,gi)=>({key:gi, rule:gp.rule||gp.title||'', explanation:gp.explanation||''}));
+      vm.lessonRetentionPreview = (lesson.retention_items||[]).map((ri,rii)=>({key:rii, term:ri.term||ri.concept||ri.title||'', feynman:!!ri.requires_feynman}));
+    }
+    return vm;
+  }
+
+  // — Retention pool + daily review columns —
+  ensureRetentionDay(data,key){ if(!data.retention.days[key]) data.retention.days[key]={notes:'',vocab:[],journal:''}; return data.retention.days[key]; }
+  setRetentionDayField(key,field,val){ this.update(data=>{ this.ensureRetentionDay(data,key)[field]=val; }); }
+  addRetentionVocab(dayKey,term,domain){
+    if(!term||!term.trim()) return;
+    const d = domain||'german';
+    let addedToBank=false;
+    this.update(data=>{
+      const day=this.ensureRetentionDay(data,dayKey);
+      day.vocab.push({id:U.uid(),term:term.trim(),domain:d,flagged:false});
+      if(STUDY_DOMAINS.includes(d) && !data[d].vocabBank.some(v=>v.term.toLowerCase()===term.trim().toLowerCase())){
+        data[d].vocabBank.push({id:U.uid(),term:term.trim(),definition:'',pronunciation:'',notionUrl:'',dateAdded:U.todayKey()});
+        addedToBank=true;
+      }
+    });
+    if(addedToBank) this.showRetentionToast('Added to '+(STUDY_DOMAIN_LABELS[d]||d)+' bank');
+  }
+  removeRetentionVocab(key,id){ this.update(data=>{ const day=this.ensureRetentionDay(data,key); day.vocab=day.vocab.filter(v=>v.id!==id); }); }
+  toggleRetentionVocabFlag(key,id){ this.update(data=>{ const day=this.ensureRetentionDay(data,key); const v=day.vocab.find(x=>x.id===id); if(v) v.flagged=!v.flagged; }); }
+  showRetentionToast(text){ const id='rt-'+U.uid(); this.setState(s=>({dueToasts:[...(s.dueToasts||[]),{id,text}]})); if(this._rtToastTimer) clearTimeout(this._rtToastTimer); this._rtToastTimer=setTimeout(()=>this.dismissToast(id),2500); }
+  reviewRetentionItem(itemId,rating){ this.update(data=>{ const it=data.retention.items.find(x=>x.id===itemId); if(it) advanceRetention(it,rating,U.todayKey()); }); }
+  submitFeynman(itemId,response,selfRating){
+    if(!response||!response.trim()) return;
+    this.update(data=>{
+      data.feynmanLog.push({id:U.uid(), retentionItemId:itemId, dateKey:U.todayKey(), response:response.trim(), selfRating});
+      const it=data.retention.items.find(x=>x.id===itemId);
+      // Map the richer 1-5 self-rating onto the same 3-tier scheduler every other review
+      // uses, so a Feynman check actually reschedules the item instead of leaving
+      // last_reviewed stale and surfacing the same item again on the very next check.
+      if(it) advanceRetention(it, selfRating<=2?'struggled':selfRating>=4?'easy':'okay', U.todayKey());
+    });
+  }
+
   pomodoroStart(){ if(this._pomTimer) return; const workS=(this.props.pomodoroWorkMinutes??25)*60, breakS=(this.props.pomodoroBreakMinutes??5)*60;
     this.setState(s=>({pomodoro:{...s.pomodoro, running:true}}));
     this._pomTimer=setInterval(()=>{ this.setState(s=>{ let {mode,secondsLeft,cycles}=s.pomodoro; secondsLeft--; if(secondsLeft<=0){ if(mode==='work'){ mode='break'; secondsLeft=breakS; cycles=cycles+1; } else { mode='work'; secondsLeft=workS; } } return {pomodoro:{mode,secondsLeft,cycles,running:true}}; }); },1000); }
@@ -1453,7 +1661,7 @@ class Component extends DCLogic {
     const bodyDayRaw = this.ensureDayReadonly(data, viewDate);
     const wd = U2.weekdayOf(today);
 
-    const TABS = [ ['dashboard','Dashboard'], ['daily','Daily'], ['finances','Finances'], ['body','Body'], ['civ','Civ Studies'], ['stem','STEM'], ['bible','Bible'], ['projects','Projects'], ['resources','Resources'], ['badges','Badges'] ]
+    const TABS = [ ['dashboard','Dashboard'], ['daily','Daily'], ['finances','Finances'], ['body','Body'], ['civ','Civ Studies'], ['stem','STEM'], ['bible','Bible'], ['german','German'], ['python','Python'], ['retention','Review'], ['projects','Projects'], ['resources','Resources'], ['badges','Badges'] ]
       .map(([k,l])=>[k, data.tabLabelOverrides[k]||l])
       .concat(data.customTabs.map(t=>[t.id,t.label])).concat([['settings','Settings']]);
     if(!data.hiddenTabs) data.hiddenTabs=[];
@@ -1466,7 +1674,7 @@ class Component extends DCLogic {
 
     const vals = {
       isDashboard: tabKey==='dashboard', isDaily: tabKey==='daily', isFinances: tabKey==='finances', isBody: tabKey==='body',
-      isStem: tabKey==='stem', isBible: tabKey==='bible', isCiv: tabKey==='civ', isProjects: tabKey==='projects', isResources: tabKey==='resources',
+      isStem: tabKey==='stem', isBible: tabKey==='bible', isCiv: tabKey==='civ', isGerman: tabKey==='german', isPython: tabKey==='python', isRetention: tabKey==='retention', isProjects: tabKey==='projects', isResources: tabKey==='resources',
       isSettings: tabKey==='settings', isBadges: tabKey==='badges',
       tabs, moreTabsOpen: this.state.moreTabsOpen, toggleMoreTabs: ()=>this.setState(s=>({moreTabsOpen:!s.moreTabsOpen})),
       moreTabsIconStyle: this.state.moreTabsOpen?'transform:rotate(180deg)':'transform:rotate(0deg)',
@@ -1476,7 +1684,7 @@ class Component extends DCLogic {
     };
 
     vals.hideCompleted = this.state.hideCompleted; vals.toggleHideCompleted = ()=>this.setState(s=>({hideCompleted:!s.hideCompleted}));
-    vals.dueToasts = (this.state.dueToasts||[]).map(t=>({id:t.id, text:t.text, label:'Reminder', dismiss:()=>this.dismissToast(t.id)}));
+    vals.dueToasts = (this.state.dueToasts||[]).map(t=>({id:t.id, text:t.text, label:t.id.indexOf('rt-')===0?'German':'Reminder', dismiss:()=>this.dismissToast(t.id)}));
     if(this.state.syncToast) vals.dueToasts = vals.dueToasts.concat([{id:'sync-toast', text:'Sync success', label:'Sync', dismiss:()=>this.setState({syncToast:false})}]);
     vals.hasToasts = vals.dueToasts.length>0;
     const hc = this.state.hideCompleted;
@@ -1491,8 +1699,17 @@ class Component extends DCLogic {
     vals.todayDoneCount = doneCount; vals.todayTotalCount = totalCount;
     vals.todayProgressPct = totalCount?Math.round(doneCount/totalCount*100):0;
     vals.todayProgressBarStyle = { width: vals.todayProgressPct+'%' };
-    const focusTab = U2.FOCUS_MAP[wd];
-    vals.hasFocus = !!focusTab; vals.focusLabel = 'Focus: '+focusTab; vals.focusGo = ()=>this.setTab(focusTab==='STEM'?'stem':focusTab==='Bible'?'bible':'civ');
+    // Dashboard hero: today's Anchor/Micro/Daily slots from the fixed weekly pattern —
+    // each slot is its own small clickable pill routing straight to that tab.
+    const wsp = U2.WEEKLY_SCHEDULE_PATTERN[wd];
+    const scheduleCell = (slot)=> slot ? E('button',{className:'tag tag-accent',style:{cursor:'pointer',border:'none',fontSize:11,padding:'2px 8px',flex:'none'},onClick:()=>this.setTab(slot.tab)}, slot.label) : E('span',{className:'text-muted',style:{fontSize:11}},'—');
+    const scheduleRow = (label,content)=> E('div',{key:label,style:{display:'flex',gap:8,alignItems:'center',justifyContent:'flex-end'}},
+      E('span',{className:'text-muted',style:{fontSize:10,textTransform:'uppercase',letterSpacing:'.04em'}},label), content);
+    vals.hasFocus = true;
+    vals.scheduleStripEl = E('div',{style:{display:'flex',flexDirection:'column',gap:5,alignItems:'flex-end'}},
+      scheduleRow('Anchor', scheduleCell(wsp.anchor)),
+      scheduleRow('Micro', scheduleCell(wsp.micro)),
+      scheduleRow('Daily', E('div',{style:{display:'flex',gap:4}}, wsp.daily.map(d=>scheduleCell(d)))));
 
     vals.habitDetailOpen = this.state.habitDetailOpen; vals.habitDetailLabel = this.state.habitDetailOpen ? '− Hide detail' : '+ View detail (numbers)';
     vals.toggleHabitDetail = ()=>this.setState(s=>({habitDetailOpen:!s.habitDetailOpen}));
@@ -1713,6 +1930,70 @@ class Component extends DCLogic {
     })();
     vals.pickerResult = this.state.pickerResult||'';
     vals.pickRandom = ()=>{ const el=document.getElementById('pickerListDraft'); if(!el) return; const items=(el.value||'').split('\n').map(s=>s.trim()).filter(Boolean); if(!items.length) return; this.setState({pickerResult: items[Math.floor(Math.random()*items.length)]}); };
+
+    // — German / Python study tabs —
+    STUDY_DOMAINS.forEach(key=>{ vals[key] = this.buildStudyTabVM(data,key); });
+
+    // — Retention: rolling 7-day columns, Feynman spot-check, weekly cocktail, leeches —
+    {
+      const rt = data.retention;
+      const dayKeys = []; for(let i=6;i>=0;i--) dayKeys.push(U2.addDays(today,-i));
+      const yesterday = U2.addDays(today,-1);
+      const dueTodaySet = new Set(); rt.items.forEach(it=>{ if(it.next_due && dayKeys.includes(it.next_due)) dueTodaySet.add(it.next_due); });
+      const buildDayVM = (key,forceEditable)=>{
+        const day = rt.days[key] || {notes:'',vocab:[],journal:''};
+        const isToday = key===today;
+        const unlocked = isToday || forceEditable || this.getUi('rtday-'+key,'unlocked',false);
+        return { key, dateLabel:key, isToday, editable:unlocked, unlock:()=>this.toggleUi('rtday-'+key,'unlocked',false),
+          dueBadge: key===yesterday || dueTodaySet.has(key),
+          notes:day.notes, setNotes:(e)=>this.setRetentionDayField(key,'notes',e.target.value),
+          journal:day.journal, setJournal:(e)=>this.setRetentionDayField(key,'journal',e.target.value),
+          vocab: day.vocab.map(v=>({ id:v.id, term:v.term, domain:v.domain, flagged:v.flagged,
+            toggleFlag:()=>this.toggleRetentionVocabFlag(key,v.id), remove:()=>this.removeRetentionVocab(key,v.id) })),
+          addVocabKey:(e)=>{ if(e.key==='Enter'){ const domEl=document.getElementById('rtVocabDomain-'+key); if(e.target.value.trim()){ this.addRetentionVocab(key, e.target.value, domEl?domEl.value:'german'); e.target.value=''; } } } };
+      };
+      vals.retentionColumns = dayKeys.map(k=>buildDayVM(k,false));
+      vals.retentionDomainOptions = STUDY_DOMAINS.concat(['stem','bible','civ']);
+      vals.retentionJumpDate = this.state.retentionJumpDate||'';
+      vals.setRetentionJumpDate = (e)=>this.setState({retentionJumpDate:e.target.value});
+      vals.retentionJumpGo = ()=>{ if(this.state.retentionJumpDate) this.setState({retentionJumpResult:this.state.retentionJumpDate}); };
+      vals.retentionJumpResultVM = this.state.retentionJumpResult ? buildDayVM(this.state.retentionJumpResult,true) : null;
+
+      // Feynman spot-check: one item due for a spot-check, held stable in state until
+      // answered or skipped so it doesn't reshuffle out from under the user mid-response.
+      const feynmanPool = rt.items.filter(it=>it.requires_feynman && (!it.last_reviewed || U2.addDays(it.last_reviewed,7)<=today));
+      let targetId = this.state.feynmanTargetId;
+      if(!targetId || !feynmanPool.some(x=>x.id===targetId)) targetId = feynmanPool.length ? feynmanPool[Math.floor(Math.random()*feynmanPool.length)].id : null;
+      const feynmanItem = feynmanPool.find(x=>x.id===targetId);
+      vals.feynmanPoolCount = feynmanPool.length;
+      vals.feynmanItem = feynmanItem ? {id:feynmanItem.id, term:feynmanItem.term, domain:feynmanItem.domain} : null;
+      vals.feynmanSubmit = (rating)=>{ const el=document.getElementById('feynmanResponse'); if(feynmanItem && el && el.value.trim()){ this.submitFeynman(feynmanItem.id, el.value, rating); el.value=''; this.setState({feynmanTargetId:null}); } };
+      vals.feynmanSkip = ()=>{ const pool=feynmanPool.filter(x=>x.id!==targetId); this.setState({feynmanTargetId: pool.length?pool[Math.floor(Math.random()*pool.length)].id:null}); };
+
+      // Weekly cocktail: hand-flagged items first, then a shuffled round-robin across
+      // domains fills the rest — regenerated only when the user asks, not every render.
+      const buildCocktailPool = ()=>{
+        const pool = [];
+        dayKeys.forEach(k=>{ const day=rt.days[k]; if(day) day.vocab.forEach(v=>pool.push({id:'v-'+v.id,kind:'vocab',prompt:v.term,answer:v.domain,domain:v.domain,flagged:v.flagged})); });
+        rt.items.filter(it=>!it.next_due || it.next_due<=U2.addDays(today,6)).forEach(it=>pool.push({id:'r-'+it.id,kind:'concept',prompt:it.term,answer:it.domain,domain:it.domain,flagged:false}));
+        STUDY_DOMAINS.forEach(key=>{ ((data[key].curriculum&&data[key].curriculum.modules)||[]).forEach((m,mi)=>(m.daily_drills||[]).forEach((d,di)=>pool.push({id:'d-'+key+mi+'-'+di,kind:'drill',prompt:d.prompt||d.question||'',answer:d.answer||'',domain:key,flagged:false}))); });
+        return pool;
+      };
+      vals.generateCocktail = ()=>{
+        const pool = buildCocktailPool();
+        const flagged = pool.filter(p=>p.flagged);
+        const byDomain = {}; pool.filter(p=>!p.flagged).forEach(p=>{ (byDomain[p.domain]=byDomain[p.domain]||[]).push(p); });
+        Object.values(byDomain).forEach(arr=>arr.sort(()=>Math.random()-0.5));
+        const domains = Object.keys(byDomain); const picks = [...flagged]; let di=0;
+        while(picks.length<9 && domains.some(dm=>byDomain[dm].length)){ const dm=domains[di%domains.length]; di++; if(byDomain[dm].length) picks.push(byDomain[dm].shift()); }
+        this.setState({cocktailPicks:picks.slice(0,10)});
+      };
+      vals.cocktailVM = (this.state.cocktailPicks||[]).map((c,ci)=>({ key:ci, kind:c.kind, prompt:c.prompt, answer:c.answer,
+        revealed:this.getUi('cocktail-'+ci,'revealed',false), reveal:()=>this.toggleUi('cocktail-'+ci,'revealed',false) }));
+      vals.hasCocktail = vals.cocktailVM.length>0;
+
+      vals.leechVM = rt.items.filter(it=>it.leech).map(it=>({ id:it.id, term:it.term, domain:it.domain, reviewCount:it.reviewCount }));
+    }
 
     const nowIso = new Date().toISOString();
     vals.remindersVM = data.reminders.map(r=>({ id:r.id, text:r.text, at:r.at, due: !r.notified && r.at<=nowIso, label: new Date(r.at).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}), remove:()=>this.removeReminder(r.id) }));
@@ -2244,6 +2525,144 @@ class Component extends DCLogic {
       return null;
     };
 
+    const buildStudyBuiltin = (key,id)=>{
+      const vm = vals[key];
+      const prefix = STUDY_TAB_PREFIX[key];
+      if(id===prefix+'Import'){
+        return { condensed: E('p',{className:'text-muted',style:{fontSize:12}}, vm.hasCurriculum?'Curriculum loaded.':'No curriculum imported yet.'),
+          full: E('div',null,
+            vm.importError ? E('p',{style:{color:'#c96a4f',fontSize:12}},vm.importError) : null,
+            E('textarea',{className:'input',id:key+'JsonDraft',placeholder:'Paste Sequential-mode curriculum JSON…',style:{minHeight:100}}),
+            E('button',{className:'btn btn-secondary',style:{marginTop:8},onClick:vm.importSubmit},'Import'),
+            vm.hasCurriculum?E('p',{className:'text-muted',style:{fontSize:12,marginTop:8}},'Re-importing replaces the current curriculum; grammar points merge in without duplicating.'):null) };
+      }
+      if(id===prefix+'Progress'){
+        return { condensed: E('div',{style:{display:'flex',gap:14,alignItems:'center'}}, E('div',{style:{...vm.progressPieStyle,width:70,height:70}}), E('span',{style:{fontSize:12}},vm.progressLabel)),
+          full: E('div',{style:{display:'flex',gap:16,alignItems:'center'}}, E('div',{style:vm.progressPieStyle}), E('span',{style:{fontSize:14}},vm.progressLabel)) };
+      }
+      if(id===prefix+'Vocab'){
+        return { condensed: vm.vocabVM.length ? shortList(vm.vocabVM,4,v=>E('div',{key:v.id,style:{fontSize:12,display:'flex',justifyContent:'space-between'}}, E('span',null,v.term), E('span',{className:'text-muted'},v.definition))) : E('p',{className:'text-muted',style:{fontSize:12}},'Empty — add below or from Review.'),
+          full: E('div',null,
+            E('table',{className:'table',style:{fontSize:12}}, E('thead',null,E('tr',null,E('th',null,''),E('th',null,'Term'),E('th',null,'Definition'),E('th',null,'Pronunciation'),E('th',null,'Link'),E('th',null,''))),
+              E('tbody',null, vm.vocabVM.map(v=>E('tr',{key:v.id,...v.drag},
+                E('td',{style:{width:16,opacity:.4,cursor:'grab'}},'⋮⋮'),
+                E('td',null,E('input',{className:'cmd-txt',defaultValue:v.term,onBlur:v.renameTerm})),
+                E('td',null,E('input',{className:'cmd-txt',defaultValue:v.definition,onBlur:v.renameDef})),
+                E('td',null,E('input',{className:'cmd-txt',defaultValue:v.pronunciation,onBlur:v.renamePron})),
+                E('td',null, v.notionUrl?E('a',{href:v.notionUrl,target:'_blank',title:'Notion source'},'🔗'):E('input',{className:'cmd-txt',style:{fontSize:11},placeholder:'link',defaultValue:v.notionUrl,onBlur:v.renameUrl})),
+                E('td',null,E('button',{className:'cmd-x-btn',onClick:v.remove},'×')))))),
+            E('div',{style:{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}},
+              E('input',{className:'input',id:key+'VocabTermDraft',placeholder:'Term',style:{maxWidth:120}}),
+              E('input',{className:'input',id:key+'VocabDefDraft',placeholder:'Definition',style:{flex:1,minWidth:120}}),
+              E('input',{className:'input',id:key+'VocabPronDraft',placeholder:'Pronunciation',style:{maxWidth:120}}),
+              E('input',{className:'input',id:key+'VocabUrlDraft',placeholder:'Notion URL',style:{maxWidth:140}}),
+              E('button',{className:'btn btn-secondary',onClick:vm.addVocabSubmit},'Add'))) };
+      }
+      if(id===prefix+'Grammar'){
+        return { condensed: vm.grammarVM.length ? shortList(vm.grammarVM,3,g=>E('div',{key:g.id,style:{fontSize:12}},g.rule)) : E('p',{className:'text-muted',style:{fontSize:12}},'Empty — import a curriculum to populate.'),
+          full: vm.grammarVM.length ? E('div',null, vm.grammarVM.map(g=>E('div',{key:g.id,...g.drag,style:{padding:'6px 0',borderBottom:'1px solid var(--color-divider)'}},
+            E('div',{style:{display:'flex',alignItems:'center',gap:6,cursor:'pointer'},onClick:g.toggleOpen},
+              E('span',{style:{cursor:'grab',opacity:.4,fontSize:12},onClick:(e)=>e.stopPropagation()},'⋮⋮'),
+              E('b',{style:{flex:1,fontSize:13}},g.rule), E('button',{className:'cmd-x-btn',onClick:(e)=>{e.stopPropagation();g.remove();}},'×')),
+            g.open ? E('div',{style:{marginTop:4,paddingLeft:20,fontSize:12}}, E('p',{style:{margin:'2px 0'}},g.explanation),
+              g.examples.length?E('ul',{style:{margin:'4px 0',paddingLeft:18}},g.examples.map((ex,i)=>E('li',{key:i},ex))):null) : null)))
+            : E('p',{className:'text-muted',style:{fontSize:12}},'Empty — grammar/pattern points populate automatically from an imported curriculum.') };
+      }
+      if(id===prefix+'Listen'){
+        return { condensed: vm.listenVM.length ? E('p',{className:'text-muted',style:{fontSize:12}}, vm.listenVM.reduce((a,m)=>a+m.resources.length,0)+' resource(s) across '+vm.listenVM.length+' module(s)') : E('p',{className:'text-muted',style:{fontSize:12}},'No resources — import a curriculum.'),
+          full: vm.listenVM.length ? E('div',null, vm.listenVM.map(m=>E('div',{key:m.key,style:{marginBottom:10}},
+            E('h6',{style:{margin:'0 0 4px'}},m.title),
+            m.resources.map(r=>E('div',{key:r.key,style:{display:'flex',alignItems:'center',gap:8,fontSize:12,padding:'3px 0'}},
+              E('span',null, r.type==='video'?'🎬':'🎧'), E('a',{href:r.url||'#',target:'_blank',style:{flex:1}},r.title), r.purpose?E('span',{className:'tag tag-neutral',style:{fontSize:10}},r.purpose):null)))))
+            : E('p',{className:'text-muted',style:{fontSize:12}},'No resources — import a curriculum.') };
+      }
+      if(id===prefix+'Notes'){
+        return { condensed: vm.notes ? E('p',{style:{fontSize:12,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:4,WebkitBoxOrient:'vertical'}},vm.notes) : E('span',{className:'text-muted',style:{fontSize:12}},'Empty — tap to write.'),
+          full: E('textarea',{className:'input',style:{minHeight:160},defaultValue:vm.notes,onBlur:vm.setNotesBlur}) };
+      }
+      if(id===prefix+'Lesson'){
+        if(vm.allDone) return { condensed: E('p',{className:'text-muted',style:{fontSize:12}},'All lessons complete 🎉'), full: E('p',{className:'text-muted',style:{fontSize:13}},'All lessons complete — import a new curriculum to continue.') };
+        if(!vm.hasLesson) return { condensed: E('p',{className:'text-muted',style:{fontSize:12}},'No curriculum imported yet.'), full: E('p',{className:'text-muted',style:{fontSize:13}},'Import a curriculum above to start Lesson 1.') };
+        const drillRow = (d)=> E('div',{key:d.key,style:{padding:'6px 0',borderBottom:'1px solid var(--color-divider)'}},
+          E('div',{style:{fontSize:13}},d.prompt),
+          d.type==='production'
+            ? (d.revealed
+                ? E('p',{style:{fontSize:12,color:'var(--cmd-strong)',marginTop:4}},'Answer: '+d.answer)
+                : E('div',{style:{display:'flex',gap:6,marginTop:4}}, E('input',{className:'input',id:'drillAns-'+d.key,style:{fontSize:12}}), E('button',{className:'btn btn-secondary',style:{fontSize:12},onClick:d.reveal},'Check')))
+            : (d.revealed
+                ? E('p',{style:{fontSize:12,color:'var(--cmd-strong)',marginTop:4}},d.answer)
+                : E('button',{className:'btn btn-ghost',style:{fontSize:12,marginTop:4},onClick:d.reveal},'Reveal')));
+        return { condensed: E('p',{style:{fontSize:12}},vm.lessonLabel+' — '+(vm.lessonTitle||'')),
+          full: E('div',null,
+            E('div',{style:{fontSize:12,color:'var(--cmd-strong)',marginBottom:6}},vm.lessonLabel),
+            E('h5',{style:{margin:'0 0 8px'}},vm.lessonTitle),
+            (vm.lessonExtraParts||[]).map(p=>E('div',{key:p.key,style:{marginBottom:8}}, E('b',{style:{fontSize:12}},p.label), E('p',{style:{fontSize:13,margin:'2px 0'}},p.text))),
+            vm.lessonGrammarPoints && vm.lessonGrammarPoints.length ? E('div',{style:{marginBottom:8}}, E('b',{style:{fontSize:12}},'Grammar'), vm.lessonGrammarPoints.map(gp=>E('p',{key:gp.key,style:{fontSize:13,margin:'2px 0'}},gp.rule+' — '+gp.explanation))) : null,
+            vm.lessonDrillsVM && vm.lessonDrillsVM.length ? E('div',{style:{marginTop:10}}, E('h6',null,'Daily drills'), vm.lessonDrillsVM.map(drillRow)) : null,
+            vm.lessonRecallCheck ? E('div',{style:{marginTop:10,paddingTop:10,borderTop:'1px solid var(--color-divider)'}}, E('h6',null,'Recall check'), E('p',{style:{fontSize:13}},vm.lessonRecallCheck.question),
+              vm.lessonRecallCheck.revealed ? E('p',{style:{fontSize:12,color:'var(--cmd-strong)'}},vm.lessonRecallCheck.answer) : E('button',{className:'btn btn-ghost',style:{fontSize:12},onClick:vm.lessonRecallCheck.reveal},'Reveal answer')) : null,
+            vm.lessonRetentionPreview && vm.lessonRetentionPreview.length ? E('div',{style:{marginTop:10}}, E('h6',null,'Goes to retention'), E('div',{style:{display:'flex',gap:4,flexWrap:'wrap'}}, vm.lessonRetentionPreview.map(ri=>E('span',{key:ri.key,className:'tag tag-neutral',style:{fontSize:10}}, ri.term+(ri.feynman?' 🗣':''))))) : null,
+            E('button',{className:'btn btn-secondary btn-block',style:{marginTop:14},onClick:vm.markComplete},'Mark complete → next lesson')) };
+      }
+      return null;
+    };
+
+    const buildRetentionBuiltin = (id)=>{
+      const domainTag = (v)=> E('span',{className:'tag tag-neutral',style:{fontSize:9}},v.domain);
+      const dayColumn = (c)=> E('div',{key:c.key,style:{minWidth:150,flex:'1 1 150px',border:'1px solid var(--color-divider)',borderRadius:8,padding:8,...(c.isToday?{boxShadow:'inset 0 0 0 2px var(--color-accent)'}:{})}},
+        E('div',{style:{display:'flex',alignItems:'center',gap:4,marginBottom:6}},
+          E('b',{style:{fontSize:11}}, c.isToday?'Today':c.dateLabel),
+          c.dueBadge?E('span',{className:'tag',style:{fontSize:9,background:'#e3a1a1',color:'#7a2e2e'}},'Due'):null,
+          !c.editable?E('button',{className:'cmd-x-btn',style:{marginLeft:'auto',fontSize:10},onClick:c.unlock,title:'Edit this day'},'✎'):null),
+        E('textarea',{className:'input',placeholder:'Notes…',style:{fontSize:11,minHeight:50},defaultValue:c.notes,onBlur:c.setNotes,disabled:!c.editable}),
+        E('div',{style:{marginTop:4}},
+          c.vocab.map(v=>E('div',{key:v.id,style:{display:'flex',alignItems:'center',gap:4,fontSize:11,padding:'1px 0'}},
+            E('span',{style:{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},v.term), domainTag(v),
+            E('button',{className:'cmd-x-btn',style:{fontSize:9,padding:0},title:'Flag for cocktail',onClick:v.toggleFlag},v.flagged?'★':'☆'),
+            c.editable?E('button',{className:'cmd-x-btn',style:{fontSize:10},onClick:v.remove},'×'):null)),
+          c.editable ? E('div',{style:{display:'flex',gap:2,marginTop:2}},
+            E('input',{className:'input',style:{fontSize:10,padding:'3px 4px'},placeholder:'+ vocab, Enter',onKeyDown:c.addVocabKey}),
+            E('select',{className:'input',id:'rtVocabDomain-'+c.key,style:{fontSize:10,padding:'3px 2px',width:'auto'}}, vals.retentionDomainOptions.map(d=>E('option',{key:d,value:d},d)))) : null),
+        E('textarea',{className:'input',placeholder:'One-liner reflection…',style:{fontSize:11,minHeight:30,marginTop:4},defaultValue:c.journal,onBlur:c.setJournal,disabled:!c.editable}));
+
+      if(id==='rtColumns'){
+        return { condensed: E('p',{className:'text-muted',style:{fontSize:12}}, vals.retentionColumns.filter(c=>c.dueBadge).length+' day(s) due · '+vals.leechVM.length+' leech(es)'),
+          full: E('div',null,
+            E('div',{style:{display:'flex',gap:6,alignItems:'center',marginBottom:10,flexWrap:'wrap'}},
+              E('input',{className:'input',type:'date',style:{width:'auto'},value:vals.retentionJumpDate,onChange:vals.setRetentionJumpDate}),
+              E('button',{className:'btn btn-secondary',style:{fontSize:12},onClick:vals.retentionJumpGo},'Jump to date')),
+            vals.retentionJumpResultVM ? E('div',{style:{marginBottom:12}}, dayColumn(vals.retentionJumpResultVM)) : null,
+            E('div',{style:{display:'flex',gap:8,overflowX:'auto',paddingBottom:4}}, vals.retentionColumns.map(dayColumn))) };
+      }
+      if(id==='rtFeynman'){
+        return { condensed: E('p',{className:'text-muted',style:{fontSize:12}}, vals.feynmanPoolCount+' item(s) due for a spot-check'),
+          full: vals.feynmanItem ? E('div',null,
+            E('p',{style:{fontSize:13}}, E('b',null,vals.feynmanItem.term), ' — explain it like you\'re teaching it to someone else.'),
+            E('textarea',{className:'input',id:'feynmanResponse',placeholder:'Your explanation…',style:{minHeight:80,marginTop:6}}),
+            E('div',{style:{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}},
+              E('button',{className:'btn btn-secondary',onClick:()=>vals.feynmanSubmit(1)},'Struggled'),
+              E('button',{className:'btn btn-secondary',onClick:()=>vals.feynmanSubmit(3)},'Okay'),
+              E('button',{className:'btn btn-secondary',onClick:()=>vals.feynmanSubmit(5)},'Easy'),
+              E('button',{className:'btn btn-ghost',style:{marginLeft:'auto'},onClick:vals.feynmanSkip},'Skip')))
+            : E('p',{className:'text-muted',style:{fontSize:13}},'Nothing due for a Feynman check right now.') };
+      }
+      if(id==='rtCocktail'){
+        return { condensed: E('p',{className:'text-muted',style:{fontSize:12}}, vals.hasCocktail? vals.cocktailVM.length+' items ready' : 'Tap to generate this week\'s mix'),
+          full: E('div',null,
+            E('button',{className:'btn btn-secondary',onClick:vals.generateCocktail}, vals.hasCocktail?'Regenerate':'Generate weekly cocktail'),
+            E('div',{style:{marginTop:8}}, vals.cocktailVM.map(c=>E('div',{key:c.key,style:{padding:'5px 0',borderBottom:'1px solid var(--color-divider)'}},
+              E('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:6}}, E('span',{style:{fontSize:13}}, (c.kind==='drill'?'Drill: ':c.kind==='concept'?'Concept: ':'')+c.prompt),
+                E('button',{className:'btn btn-ghost',style:{fontSize:11,flex:'none'},onClick:c.reveal}, c.revealed?'Hide':'Reveal')),
+              c.revealed?E('p',{style:{fontSize:12,color:'var(--cmd-strong)',margin:'2px 0 0'}},c.answer||'—'):null)))) };
+      }
+      if(id==='rtLeeches'){
+        return { condensed: E('p',{className:'text-muted',style:{fontSize:12}}, vals.leechVM.length?vals.leechVM.length+' item(s) need restructuring':'None flagged.'),
+          full: vals.leechVM.length ? E('div',null, vals.leechVM.map(l=>E('div',{key:l.id,style:{display:'flex',justifyContent:'space-between',padding:'4px 0',borderBottom:'1px solid var(--color-divider)',fontSize:13}}, E('span',null,l.term+' ('+l.domain+')'), E('span',{className:'text-muted'},l.reviewCount+' reviews, stuck'))))
+            : E('p',{className:'text-muted',style:{fontSize:13}},'Nothing stuck right now.') };
+      }
+      return null;
+    };
+
     const buildResourcesBuiltin = (id)=>{
       const pom = this.state.pomodoro;
       switch(id){
@@ -2299,6 +2718,8 @@ class Component extends DCLogic {
         if(tk==='dashboard'||tk==='finances'||tk==='daily') c=buildBuiltinTileContent(t.id, t.size);
         else if(tk==='body') c=buildBodyBuiltin(t.id, t.size);
         else if(CURRICULUM_TAB_PREFIX[tk]) c=buildCurriculumBuiltin(CURRICULUM_TAB_PREFIX[tk],tk,t.id);
+        else if(STUDY_TAB_PREFIX[tk]) c=buildStudyBuiltin(tk,t.id);
+        else if(tk==='retention') c=buildRetentionBuiltin(t.id);
         else if(tk==='resources') c=buildResourcesBuiltin(t.id);
         return c ? {title, condensed:c.condensed, full:c.full} : null;
       }
