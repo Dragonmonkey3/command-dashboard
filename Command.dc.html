@@ -539,16 +539,6 @@ class Component extends DCLogic {
   }
 
   componentDidMount(){
-    const today = U.todayKey();
-    this.update(data=>{
-      const last = data.lastActiveDate;
-      if(last !== today){
-        if(last === U.addDays(today,-1)) data.streak = (data.streak||0)+1;
-        else if(!last) data.streak = data.streak||1;
-        else data.streak = 1;
-        data.lastActiveDate = today;
-      }
-    });
     // Reminders only fire while this tab is open — no service worker / push here,
     // this is a static local page. Checking every 20s is plenty for a personal reminder list.
     this._reminderTimer = setInterval(()=>this.checkDueReminders(), 20000);
@@ -556,9 +546,25 @@ class Component extends DCLogic {
     this._resizeHandler = ()=>this.layoutTiles();
     window.addEventListener('resize', this._resizeHandler);
     this.layoutTiles();
-    // Pull once on open, then poll every 30s and whenever the tab regains focus — the local
-    // edit path pushes on its own (see update()), this half only needs to catch remote changes.
-    this.pullFromGist();
+    // Pull BEFORE touching local data at all, and compare freshness against whatever
+    // updatedAt this device last actually persisted — not one bumped by mounting just now.
+    // update() always stamps updatedAt=Date.now(), so if the streak check below ran first
+    // (as it used to), local would look "freshest" on every single page load purely from
+    // opening the app, and a real remote update would never win the pull comparison.
+    this.pullFromGist().then(()=>{
+      const today = U.todayKey();
+      const last = this.state.data.lastActiveDate;
+      if(last !== today){
+        this.update(data=>{
+          if(last === U.addDays(today,-1)) data.streak = (data.streak||0)+1;
+          else if(!last) data.streak = data.streak||1;
+          else data.streak = 1;
+          data.lastActiveDate = today;
+        });
+      }
+    });
+    // Then poll every 30s and whenever the tab regains focus — the local edit path pushes
+    // on its own (see update()), this half only needs to catch remote changes.
     this._syncPullTimer = setInterval(()=>this.pullFromGist(), 30000);
     this._syncVisHandler = ()=>{ if(!document.hidden) this.pullFromGist(); };
     document.addEventListener('visibilitychange', this._syncVisHandler);
