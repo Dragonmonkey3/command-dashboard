@@ -555,7 +555,7 @@ class Component extends DCLogic {
       const today = U.todayKey();
       const last = this.state.data.lastActiveDate;
       if(last !== today){
-        this.update(data=>{
+        this.updateLocalOnly(data=>{
           if(last === U.addDays(today,-1)) data.streak = (data.streak||0)+1;
           else if(!last) data.streak = data.streak||1;
           else data.streak = 1;
@@ -647,6 +647,14 @@ class Component extends DCLogic {
 
   persist(data){ try{ localStorage.setItem('command-app-data-v1', JSON.stringify(data)); }catch(e){} }
   update(mutator){ this.setState(s=>{ const data = JSON.parse(JSON.stringify(s.data)); mutator(data); data.updatedAt = Date.now(); this.persist(data); return {data}; }); this.scheduleSync(); }
+  // Same as update(), but never bumps updatedAt or schedules a push. For bookkeeping that
+  // happens automatically on mount (the login-streak bump) rather than from something the
+  // user actually did — that distinction matters twice over: a push overwrites the shared
+  // gist unconditionally with whatever's local (a device that merely opened the app, maybe
+  // before it even finished pulling real data, pushing on its own is exactly what clobbered
+  // synced data twice), and leaving updatedAt untouched means this device's own freshness
+  // baseline for future pulls isn't spuriously advanced just by having opened the app.
+  updateLocalOnly(mutator){ this.setState(s=>{ const data = JSON.parse(JSON.stringify(s.data)); mutator(data); this.persist(data); return {data}; }); }
 
   getUi(id,key,def){ const u=this.state.uiById[id]; return u && u[key]!==undefined ? u[key] : (def!==undefined?def:false); }
   toggleUi(id,key,def){ this.setState(s=>{ const cur=s.uiById[id]||{}; const curVal = cur[key]!==undefined?cur[key]:(def!==undefined?def:false); return {uiById:{...s.uiById,[id]:{...cur,[key]:!curVal}}}; }); }
