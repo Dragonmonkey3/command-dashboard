@@ -507,7 +507,8 @@ const TAB_BUILTIN_TILES = {
     {key:'dayDevotion', title:'Devotion', size:'large'},
     {key:'dayBible', title:'Bible progress', size:'wide'},
     {key:'dayJournal', title:'Journal', size:'wide'},
-    {key:'dayBooks', title:'Book list', size:'wide'}
+    {key:'dayBooks', title:'Book list', size:'wide'},
+    {key:'dayDebate', title:'Debate', size:'full'}
   ],
   body: [
     {key:'bTrackers', title:'Trackers', size:'wide'},
@@ -539,6 +540,38 @@ const BUILTIN_TAB_LABELS = {dashboard:'Dashboard',daily:'Daily',finances:'Financ
 const CURRICULUM_TAB_PREFIX = { stem:'s', bible:'bi', civ:'c' };
 const RETENTION_BASE_INTERVALS = [1,3,7,14,30,90];
 
+// One-time seed for a blank workout program — [name, setCount, repsLabel] tuples, expanded
+// into real editable exercise rows (renameListItem/removeListItem/addListItem already handle
+// the rest, so this is just starting content, fully customizable after seeding).
+const WARMUP_SEED = [
+  ['Plank','2','30-45 sec'],
+  ['Side plank (each side)','1','20-30 sec'],
+  ['Cat-cow or light torso twists','1','10-15 reps'],
+  ['Bodyweight squats or arm circles','1','10-15 reps']
+];
+const WORKOUT_PROGRAM_SEED = {
+  Mon: [...WARMUP_SEED,
+    ['Barbell Bench Press','4','6-10'], ['Incline Dumbbell Press','4','8-12'], ['Dumbbell Flyes','3','10-15'],
+    ['Diamond Push-ups','3','max (8-15)'], ['Close-Grip Bench or Regular Push-ups','3','8-15'], ['Overhead Triceps Extension','3','10-15'],
+    ['Crunches','3','15-25'], ['Lying Leg Raises','3','12-20'], ['Plank','2','45-60 sec']],
+  Tue: [...WARMUP_SEED,
+    ['Barbell Bent-Over Row or One-Arm DB Row','4','6-10'], ['Lat Pulldown / Inverted Rows / Pull-ups','4','8-12'], ['Seated Row or Chest-Supported Row','3','8-12'],
+    ['Barbell or Dumbbell Curl','4','8-12'], ['Hammer Curls','3','10-15'], ['Superman Holds','3','20-30 sec'],
+    ['Inverted Rows (bar/table)','3','max'], ['Bicycle Crunches','3','15-20 per side'], ['Russian Twists','3','20-30'], ['Side Plank (each side)','2','30 sec']],
+  Wed: [...WARMUP_SEED,
+    ['Overhead Press','4','6-10'], ['Lateral Raises','3','12-15'], ['Barbell Curl','3','8-12'], ['Incline Dumbbell Curl','3','10-15'],
+    ['Diamond Push-ups','3','max'], ['Skull Crushers or Overhead Extension','3','10-12'], ['Close-Grip/Diamond Push-ups or Bench Dips','3','max'],
+    ['Crunches','3','15-20'], ['Leg Raises','3','12-15'], ['Plank','3','30-45 sec']],
+  Thu: [...WARMUP_SEED,
+    ['Incline Bench Press','4','8-12'], ['Flat Dumbbell Press','3','10-12'], ['Pull-Ups / Lat Pulldown','4','6-12'], ['One-Arm Dumbbell Row','3','8-12'],
+    ['Push-up Variation','3','max'], ['Face Pulls or Rear-Delt Flyes','3','12-15'],
+    ['Crunches','3','15-25'], ['Hanging or Lying Leg Raises','3','12-20'], ['Dead Bug or Bird-Dog','2','10 per side']],
+  Fri: [...WARMUP_SEED,
+    ['Close-Grip Bench or Dips','3','8-12'], ['Barbell / EZ-Bar Curl','4','8-12'], ['Dumbbell Concentration Curl','3','10-15'],
+    ['Diamond Push-ups','3','max'], ['Hammer Curls','3','10-15'], ['Bench Dips or Diamond Push-ups','2','max'],
+    ['Crunches','4','15-25'], ['Leg Raises','4','12-20'], ['Russian Twists','4','20-30'], ['Plank','4','40-60 sec']]
+};
+
 class Component extends DCLogic {
   // Fills in any field a fresh sampleData()/blankData() or an older/imported save might be
   // missing — including the unified widget-grid migration (one ordered tile list per tab,
@@ -550,7 +583,26 @@ class Component extends DCLogic {
     if(!data.tabContent) data.tabContent = { stem:{resources:[],blocks:[],notionLinks:[]}, bible:{resources:[],blocks:[],notionLinks:[]}, civ:{resources:[],blocks:[],notionLinks:[]} };
     if(!data.tabContent.dashboard) data.tabContent.dashboard = { blocks: [] };
     if(!data.counters) data.counters = [{id:'water', name:'Water', unit:'glasses', goal:data.waterGoal||8, decimals:false}];
+    // Water was briefly tracked in mL (goal 3500) before being shortened to liters — rescale
+    // the goal and every stored day's value once so old ml-scale numbers don't show as a
+    // near-empty bar against the new L-scale goal.
+    { const wc = data.counters.find(c=>c.id==='water');
+      if(wc && wc.unit==='ml' && wc.goal>=1000){
+        wc.unit='L'; wc.goal=Math.round(wc.goal/1000*10)/10; wc.decimals=true;
+        Object.keys(data.days||{}).forEach(k=>{ const day=data.days[k]; if(day.counterValues && day.counterValues.water!==undefined) day.counterValues.water=Math.round(day.counterValues.water/1000*10)/10; if(day.water!==undefined) day.water=Math.round(day.water/1000*10)/10; });
+      }
+    }
     if(!data.weekdayChunks) data.weekdayChunks = {Sun:[],Mon:[],Tue:[],Wed:[],Thu:[],Fri:[],Sat:[]};
+    if(!data.body.workoutSeeded){
+      const allEmpty = ['Mon','Tue','Wed','Thu','Fri'].every(d=>!(data.body.workoutProgram[d]||[]).length);
+      if(allEmpty){
+        Object.keys(WORKOUT_PROGRAM_SEED).forEach(d=>{
+          data.body.workoutProgram[d] = WORKOUT_PROGRAM_SEED[d].map(([name,count,reps])=>({
+            id:U.uid(), name, sets: Array.from({length:Number(count)},()=>({reps,weight:''})) }));
+        });
+      }
+      data.body.workoutSeeded = true;
+    }
     Object.keys(data.days||{}).forEach(k=>{ const day=data.days[k]; if(!day.counterValues) day.counterValues={}; if(day.water!==undefined && day.counterValues.water===undefined) day.counterValues.water=day.water; if(!day.wdChunkDone) day.wdChunkDone={}; if(day.devotion && !day.devotion.chapters) day.devotion.chapters={ot:0,nt:0,psalms:0,proverbs:0}; });
     (data.projects||[]).forEach(f=>{ (f.children||[]).forEach(e=>{ if(e.deactivated===undefined) e.deactivated=false; }); });
     (data.adHoc||[]).forEach(a=>{
@@ -575,6 +627,11 @@ class Component extends DCLogic {
     if(!data.reminders) data.reminders=[];
     if(!data.pinnedNoteSections) data.pinnedNoteSections={};
     if(!data.stocks) data.stocks=[];
+    if(!data.debate) data.debate={premises:[],evidence:[],arguments:[]};
+    if(!data.debate.premises) data.debate.premises=[];
+    if(!data.debate.evidence) data.debate.evidence=[];
+    if(!data.debate.arguments) data.debate.arguments=[];
+    data.debate.arguments.forEach(a=>{ if(a.type===undefined) a.type='logical'; if(!a.premiseIds) a.premiseIds=[]; if(!a.evidenceIds) a.evidenceIds=[]; });
     STUDY_DOMAINS.forEach(key=>{ if(!data[key]) data[key]={curriculum:null, vocabBank:[], grammarBank:[], notes:'', currentLesson:0}; });
     if(!data.retention) data.retention={days:{}, items:[]};
     if(!data.retention.days) data.retention.days={};
@@ -810,6 +867,7 @@ class Component extends DCLogic {
   toggleDailyDone(id){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.dailyDone[id]=!day.dailyDone[id]; }); }
   toggleAdHoc(id){ this.update(data=>{ const it=data.adHoc.find(x=>x.id===id); if(it) it.done=!it.done; }); }
   toggleWeeklyDay(id,day){ this.update(data=>{ const t=data.weeklyTasks.find(x=>x.id===id); if(t){ const i=t.days.indexOf(day); if(i>=0) t.days.splice(i,1); else t.days.push(day); } }); }
+  toggleDebateLink(argId,kind,itemId){ this.update(data=>{ const a=data.debate.arguments.find(x=>x.id===argId); if(!a) return; if(!a[kind]) a[kind]=[]; const i=a[kind].indexOf(itemId); if(i>=0) a[kind].splice(i,1); else a[kind].push(itemId); }); }
   toggleWeeklyDone(id){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.weeklyDone[id]=!day.weeklyDone[id]; }); }
   toggleChunkDone(id){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.chunkDone[id]=!day.chunkDone[id]; }); }
   toggleWdChunkDone(id){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.wdChunkDone[id]=!day.wdChunkDone[id]; }); }
@@ -1719,14 +1777,17 @@ class Component extends DCLogic {
 
     const dailyHeatmapPct = (key)=>{ const d = data.days[key]; if(!d) return null; const total = data.dailyRecurring.length; if(!total) return null; const done = data.dailyRecurring.filter(t=>d.dailyDone[t.id]).length; return done/total*100; };
 
-    vals.dailyRecurringVM = data.dailyRecurring.map(t=>({ id:t.id, text:t.text, done: !!day0.dailyDone[t.id], toggle:()=>this.toggleDailyDone(t.id), rename:(e)=>this.renameListItem(['dailyRecurring'],t.id,'text',e.target.value), remove:()=>this.removeListItem(['dailyRecurring'],t.id), drag:this.dragRowProps(['dailyRecurring'],t.id) })).filter(it=>!hc||!it.done).sort((a,b)=>a.done-b.done);
+    const dailyRecurringMapped = data.dailyRecurring.map(t=>({ id:t.id, text:t.text, done: !!day0.dailyDone[t.id], toggle:()=>this.toggleDailyDone(t.id), rename:(e)=>this.renameListItem(['dailyRecurring'],t.id,'text',e.target.value), remove:()=>this.removeListItem(['dailyRecurring'],t.id), drag:this.dragRowProps(['dailyRecurring'],t.id) }));
+    const dailyRecurringAllDone = dailyRecurringMapped.length>0 && dailyRecurringMapped.every(it=>it.done);
+    vals.dailyRecurringVM = dailyRecurringMapped.filter(it=>!hc||dailyRecurringAllDone||!it.done).sort((a,b)=>a.done-b.done);
     vals.addDailyRecurringKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['dailyRecurring'],{id:U2.uid(),text:e.target.value.trim()}); e.target.value=''; } };
 
     const todayKeyForUrgency = U2.todayKey();
-    // Unchecked always first, then whatever order the tasks sit in in data.adHoc — drag a
-    // row (reorderAdHoc) to rearrange; urgency still shows as a colored tag but no longer
-    // forces the sort order, since that would just fight the user's own manual drag.
-    vals.adHocVM = data.adHoc.map(t=>{
+    // Unchecked first, ASAP-tagged among those always floats to the very top, then
+    // whatever order the tasks sit in in data.adHoc — drag a row to rearrange within
+    // those groups; the rest of urgency still shows as a colored tag but doesn't force
+    // sort order, since that would fight the user's own manual drag.
+    const adHocMapped = data.adHoc.map(t=>{
       const meta = urgencyMeta(t, todayKeyForUrgency);
       return { id:t.id, text:t.text, done:t.done, urgency:t.urgency||'', dueAt:t.dueAt||'', urgencyLabel:meta.label,
         toggle:()=>this.toggleAdHoc(t.id),
@@ -1735,22 +1796,64 @@ class Component extends DCLogic {
         setDueAt:(e)=>{ const v=e.target.value; this.update(d=>{ const it=d.adHoc.find(x=>x.id===t.id); if(it){ it.dueAt=v; it.notified=false; if(v) it.urgency=''; } }); },
         drag:this.dragRowProps(['adHoc'],t.id),
         remove:()=>this.removeListItem(['adHoc'],t.id) };
-    }).filter(it=>!hc||!it.done).sort((a,b)=>a.done-b.done);
+    });
+    const adHocAllDone = adHocMapped.length>0 && adHocMapped.every(it=>it.done);
+    vals.adHocVM = adHocMapped.filter(it=>!hc||adHocAllDone||!it.done)
+      .sort((a,b)=>(a.done-b.done) || ((b.urgency==='urgent')-(a.urgency==='urgent')));
     vals.addAdHocKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['adHoc'],{id:U2.uid(),text:e.target.value.trim(),done:false,urgency:'',dueAt:''}); e.target.value=''; } };
 
-    vals.weekdayChunksVM = U2.WEEKDAYS.map(dname=>({ label:dname, notToday: dname!==wd, highlightStyle: dname===wd?'box-shadow: inset 0 0 0 2px var(--color-accent);':'',
-      items:(data.weekdayChunks[dname]||[]).map(it=>({ id:it.id, text:it.text, done: !!day0.wdChunkDone[it.id], toggle:()=>this.toggleWdChunkDone(it.id), rename:(e)=>this.renameListItem(['weekdayChunks',dname],it.id,'text',e.target.value), remove:()=>this.removeListItem(['weekdayChunks',dname],it.id), drag:this.dragRowProps(['weekdayChunks',dname],it.id) })).filter(it=>!hc||dname!==wd||!it.done).sort((a,b)=>a.done-b.done),
-      addKey:(e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['weekdayChunks',dname],{id:U2.uid(),text:e.target.value.trim()}); e.target.value=''; } } }));
+    vals.weekdayChunksVM = U2.WEEKDAYS.map(dname=>{
+      const items = (data.weekdayChunks[dname]||[]).map(it=>({ id:it.id, text:it.text, done: !!day0.wdChunkDone[it.id], toggle:()=>this.toggleWdChunkDone(it.id), rename:(e)=>this.renameListItem(['weekdayChunks',dname],it.id,'text',e.target.value), remove:()=>this.removeListItem(['weekdayChunks',dname],it.id), drag:this.dragRowProps(['weekdayChunks',dname],it.id) }));
+      const allDone = items.length>0 && items.every(it=>it.done);
+      return { label:dname, notToday: dname!==wd, highlightStyle: dname===wd?'box-shadow: inset 0 0 0 2px var(--color-accent);':'',
+        items: items.filter(it=>!hc||dname!==wd||allDone||!it.done).sort((a,b)=>a.done-b.done),
+        addKey:(e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['weekdayChunks',dname],{id:U2.uid(),text:e.target.value.trim()}); e.target.value=''; } } };
+    });
 
-    vals.weeklyVM = data.weeklyTasks.map(t=>({ id:t.id, text:t.text, done: !!day0.weeklyDone[t.id], notToday: !t.days.includes(wd), doneToday: !!day0.weeklyDone[t.id], notes: t.notes||'',
+    const weeklyMapped = data.weeklyTasks.map(t=>({ id:t.id, text:t.text, done: !!day0.weeklyDone[t.id], notToday: !t.days.includes(wd), doneToday: !!day0.weeklyDone[t.id], notes: t.notes||'',
       expanded: this.getUi('wk-'+t.id,'open',false), toggleExpand:()=>this.toggleUi('wk-'+t.id,'open',false), expandLabel: this.getUi('wk-'+t.id,'open',false)?'less':'more',
       setNotes:(e)=>this.renameListItem(['weeklyTasks'],t.id,'notes',e.target.value),
       toggle:()=>this.toggleWeeklyDone(t.id), rename:(e)=>this.renameListItem(['weeklyTasks'],t.id,'text',e.target.value), remove:()=>this.removeListItem(['weeklyTasks'],t.id), drag:this.dragRowProps(['weeklyTasks'],t.id),
-      dayChips: U2.WEEKDAYS.map(d=>({ label:d, style:{background: t.days.includes(d)?'var(--color-accent)':'transparent', color: t.days.includes(d)?'var(--color-bg)':'inherit', border:'1px solid var(--color-divider)', cursor:'pointer'}, toggle:()=>this.toggleWeeklyDay(t.id,d) })) })).filter(it=>!hc||!(it.doneToday && !it.notToday)).sort((a,b)=>a.doneToday-b.doneToday);
+      dayChips: U2.WEEKDAYS.map(d=>({ label:d, style:{background: t.days.includes(d)?'var(--color-accent)':'transparent', color: t.days.includes(d)?'var(--color-bg)':'inherit', border:'1px solid var(--color-divider)', cursor:'pointer'}, toggle:()=>this.toggleWeeklyDay(t.id,d) })) }));
+    const weeklyTodayItems = weeklyMapped.filter(it=>!it.notToday);
+    const weeklyAllDone = weeklyTodayItems.length>0 && weeklyTodayItems.every(it=>it.doneToday);
+    vals.weeklyVM = weeklyMapped.filter(it=>!hc||weeklyAllDone||!(it.doneToday && !it.notToday)).sort((a,b)=>a.doneToday-b.doneToday);
     vals.addWeeklyKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['weeklyTasks'],{id:U2.uid(),text:e.target.value.trim(),days:[],notes:''}); e.target.value=''; } };
 
-    vals.chunksVM = U2.CHUNK_NAMES.map(cn=>({ name:cn, items: (data.chunks[cn]||[]).map(it=>({ id:it.id, text:it.text, done: !!day0.chunkDone[it.id], toggle:()=>this.toggleChunkDone(it.id), rename:(e)=>this.renameListItem(['chunks',cn],it.id,'text',e.target.value), remove:()=>this.removeListItem(['chunks',cn],it.id), drag:this.dragRowProps(['chunks',cn],it.id) })).filter(it=>!hc||!it.done).sort((a,b)=>a.done-b.done),
-      addKey:(e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['chunks',cn],{id:U2.uid(),text:e.target.value.trim()}); e.target.value=''; } } }));
+    vals.chunksVM = U2.CHUNK_NAMES.map(cn=>{
+      const items = (data.chunks[cn]||[]).map(it=>({ id:it.id, text:it.text, done: !!day0.chunkDone[it.id], toggle:()=>this.toggleChunkDone(it.id), rename:(e)=>this.renameListItem(['chunks',cn],it.id,'text',e.target.value), remove:()=>this.removeListItem(['chunks',cn],it.id), drag:this.dragRowProps(['chunks',cn],it.id) }));
+      const allDone = items.length>0 && items.every(it=>it.done);
+      return { name:cn, items: items.filter(it=>!hc||allDone||!it.done).sort((a,b)=>a.done-b.done),
+        addKey:(e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['chunks',cn],{id:U2.uid(),text:e.target.value.trim()}); e.target.value=''; } } };
+    });
+
+    // Debate builder: premises and evidence are plain reusable reference lists (no done
+    // state), arguments are conclusions that pick which of those support them — the
+    // premiseIds/evidenceIds arrays are the "flowchart" links, shown as tag chips rather
+    // than drawn connector lines to stay visually consistent with the rest of the app.
+    vals.debatePremisesVM = data.debate.premises.map(p=>({ id:p.id, text:p.text,
+      rename:(e)=>this.renameListItem(['debate','premises'],p.id,'text',e.target.value),
+      remove:()=>this.removeListItem(['debate','premises'],p.id), drag:this.dragRowProps(['debate','premises'],p.id) }));
+    vals.addDebatePremiseKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['debate','premises'],{id:U2.uid(),text:e.target.value.trim()}); e.target.value=''; } };
+    vals.debateEvidenceVM = data.debate.evidence.map(ev=>({ id:ev.id, text:ev.text,
+      rename:(e)=>this.renameListItem(['debate','evidence'],ev.id,'text',e.target.value),
+      remove:()=>this.removeListItem(['debate','evidence'],ev.id), drag:this.dragRowProps(['debate','evidence'],ev.id) }));
+    vals.addDebateEvidenceKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['debate','evidence'],{id:U2.uid(),text:e.target.value.trim()}); e.target.value=''; } };
+    vals.debateArgumentsVM = data.debate.arguments.map(a=>{
+      const expanded = this.getUi('deb-'+a.id,'open',false);
+      const linkedSummary = [
+        ...(a.premiseIds||[]).map(id=>{ const p=data.debate.premises.find(x=>x.id===id); return p?p.text:null; }),
+        ...(a.evidenceIds||[]).map(id=>{ const ev=data.debate.evidence.find(x=>x.id===id); return ev?ev.text:null; })
+      ].filter(Boolean);
+      return { id:a.id, text:a.text, type:a.type||'logical', expanded, linkedSummary,
+        toggleExpand:()=>this.toggleUi('deb-'+a.id,'open',false),
+        rename:(e)=>this.renameListItem(['debate','arguments'],a.id,'text',e.target.value),
+        setType:(e)=>this.renameListItem(['debate','arguments'],a.id,'type',e.target.value),
+        remove:()=>this.removeListItem(['debate','arguments'],a.id), drag:this.dragRowProps(['debate','arguments'],a.id),
+        premiseChips: data.debate.premises.map(p=>({ id:p.id, text:p.text, linked:(a.premiseIds||[]).includes(p.id), toggle:()=>this.toggleDebateLink(a.id,'premiseIds',p.id) })),
+        evidenceChips: data.debate.evidence.map(ev=>({ id:ev.id, text:ev.text, linked:(a.evidenceIds||[]).includes(ev.id), toggle:()=>this.toggleDebateLink(a.id,'evidenceIds',ev.id) })) };
+    });
+    vals.addDebateArgumentKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['debate','arguments'],{id:U2.uid(),text:e.target.value.trim(),type:'logical',premiseIds:[],evidenceIds:[]}); e.target.value=''; } };
 
     vals.countersVM = data.counters.map(c=>{ const val = this.getCounterVal(data,bodyDayRaw,c); const step = c.decimals?0.1:1; const open=this.getUi('counter-'+c.id,'open',false);
       return { id:c.id, name:c.name, unit:c.unit, goal:c.goal, decimals:c.decimals, value: val, step, open,
@@ -2190,6 +2293,39 @@ class Component extends DCLogic {
                 E('span',{title:'Drag to reorder',style:{cursor:'grab',opacity:.4,flex:'none',fontSize:12}},'⋮⋮'),
                 E('input',{type:'checkbox',className:'cmd-chk',checked:it.done,onChange:it.toggle}), E('input',{className:'cmd-txt',style:{fontSize:13},defaultValue:it.text,onBlur:it.rename}), E('button',{className:'cmd-x-btn',onClick:it.remove},'×'))),
               E('input',{className:'input',style:{marginTop:6,fontSize:12},placeholder:'Add…',onKeyDown:chunk.addKey})))) };
+        }
+        case 'dayDebate': {
+          const premises = vals.debatePremisesVM, evidence = vals.debateEvidenceVM, args = vals.debateArgumentsVM;
+          const dragRow = (it,inputStyle)=> E('div',{key:it.id,...it.drag,style:{display:'flex',alignItems:'center',gap:6,padding:'3px 0'}},
+            E('span',{title:'Drag to reorder',style:{cursor:'grab',opacity:.4,flex:'none',fontSize:11}},'⋮⋮'),
+            E('input',{className:'cmd-txt',style:{fontSize:12,flex:1,...inputStyle},defaultValue:it.text,onBlur:it.rename}),
+            E('button',{className:'cmd-x-btn',onClick:it.remove},'×'));
+          const chipRow = (label,chips)=> chips.length ? E('div',{style:{marginTop:4}},
+            E('div',{className:'text-muted',style:{fontSize:10,marginBottom:2}},label),
+            E('div',{style:{display:'flex',gap:4,flexWrap:'wrap'}}, chips.map(c=>E('button',{key:c.id,className:'tag',style:{fontSize:10,cursor:'pointer',opacity:c.linked?1:.45,border:c.linked?'1px solid var(--color-accent)':'1px solid var(--color-divider)'},onClick:c.toggle},c.text)))) : null;
+          const colWrap = (title,inner,addKey,placeholder)=> E('div',{style:{border:'1px solid var(--color-divider)',borderRadius:'8px',padding:8,minWidth:0}},
+            E('h6',{style:{margin:'0 0 6px'}},title), inner,
+            E('input',{className:'input',style:{marginTop:6,fontSize:12},placeholder,onKeyDown:addKey}));
+          return {
+            condensed: E('div',{style:{fontSize:12}},
+              E('div',{style:{color:'var(--cmd-strong)',marginBottom:4}}, premises.length+' premises · '+evidence.length+' evidence · '+args.length+' argument'+(args.length===1?'':'s')),
+              args.length ? shortList(args,3,a=>rowLine(a.id,a.text,false)) : E('p',{className:'text-muted',style:{fontSize:11}},'No arguments yet — combine premises and evidence into one below.')),
+            full: E('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:12}},
+              colWrap('Premises', premises.length?premises.map(p=>dragRow(p)):E('p',{className:'text-muted',style:{fontSize:11}},'None yet.'), vals.addDebatePremiseKey, 'Add premise, press Enter'),
+              colWrap('Evidence', evidence.length?evidence.map(ev=>dragRow(ev)):E('p',{className:'text-muted',style:{fontSize:11}},'None yet.'), vals.addDebateEvidenceKey, 'Add evidence, press Enter'),
+              colWrap('Arguments',
+                args.length ? args.map(a=>E('div',{key:a.id,...a.drag,style:{padding:'5px 0',borderBottom:'1px solid var(--color-divider)'}},
+                  E('div',{style:{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}},
+                    E('span',{title:'Drag to reorder',style:{cursor:'grab',opacity:.4,flex:'none',fontSize:11}},'⋮⋮'),
+                    E('input',{className:'cmd-txt',style:{fontSize:12,flex:1,minWidth:80},defaultValue:a.text,onBlur:a.rename}),
+                    E('select',{className:'input',style:{width:'auto',fontSize:10,padding:'2px 4px'},value:a.type,onChange:a.setType},
+                      E('option',{value:'logical'},'Logical'), E('option',{value:'rhetorical'},'Rhetorical')),
+                    E('button',{className:'cmd-x-btn',style:{fontSize:10},title:'Link premises/evidence',onClick:a.toggleExpand}, a.expanded?'▾':'▸'),
+                    E('button',{className:'cmd-x-btn',onClick:a.remove},'×')),
+                  !a.expanded ? chipRow('Combines', a.linkedSummary.map((t,i)=>({id:i,text:t,linked:true,toggle:()=>{}}))) : E('div',{style:{marginTop:4,paddingLeft:17}},
+                    chipRow('Premises used', a.premiseChips), chipRow('Evidence used', a.evidenceChips)))) : E('p',{className:'text-muted',style:{fontSize:11}},'None yet.'),
+                vals.addDebateArgumentKey, 'Add argument (conclusion), press Enter'))
+          };
         }
         case 'dCounters': {
           return { condensed: shortList(vals.countersVM,3,c=>E('div',{key:c.id,style:{fontSize:12,marginBottom:4}},
