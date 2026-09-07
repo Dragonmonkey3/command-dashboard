@@ -506,7 +506,7 @@ const TAB_BUILTIN_TILES = {
   daily: [
     {key:'dayDevotion', title:'Devotion', size:'large'},
     {key:'dayBible', title:'Bible progress', size:'wide'},
-    {key:'dayJournal', title:'Journal', size:'wide'},
+    {key:'dayJournal', title:'Journal', size:'full'},
     {key:'dayBooks', title:'Book list', size:'wide'},
     {key:'dayDebate', title:'Debate', size:'full'}
   ],
@@ -603,7 +603,7 @@ class Component extends DCLogic {
       }
       data.body.workoutSeeded = true;
     }
-    Object.keys(data.days||{}).forEach(k=>{ const day=data.days[k]; if(!day.counterValues) day.counterValues={}; if(day.water!==undefined && day.counterValues.water===undefined) day.counterValues.water=day.water; if(!day.wdChunkDone) day.wdChunkDone={}; if(day.devotion && !day.devotion.chapters) day.devotion.chapters={ot:0,nt:0,psalms:0,proverbs:0}; });
+    Object.keys(data.days||{}).forEach(k=>{ const day=data.days[k]; if(!day.counterValues) day.counterValues={}; if(day.water!==undefined && day.counterValues.water===undefined) day.counterValues.water=day.water; if(!day.wdChunkDone) day.wdChunkDone={}; if(day.devotion && !day.devotion.chapters) day.devotion.chapters={ot:0,nt:0,psalms:0,proverbs:0}; if(!day.reading) day.reading={today:'',passages:[],lessons:''}; });
     (data.projects||[]).forEach(f=>{ (f.children||[]).forEach(e=>{ if(e.deactivated===undefined) e.deactivated=false; }); });
     (data.adHoc||[]).forEach(a=>{
       if(a.urgency===undefined) a.urgency='';
@@ -841,14 +841,14 @@ class Component extends DCLogic {
   shiftViewDate(n){ this.setState(s=>({viewDate:U.addDays(s.viewDate,n)})); }
 
   ensureDay(data,key){
-    const def = ()=>({dailyDone:{},weeklyDone:{},chunkDone:{},wdChunkDone:{},water:0,counterValues:{},calories:'',protein:'',weight:'',gym:false,devotion:{memoryVerse:'',chapters:{ot:0,nt:0,psalms:0,proverbs:0},prayer5:false,prayerOfDay:'',newIdea:'',prayerRequests:[],thankful:[]}});
+    const def = ()=>({dailyDone:{},weeklyDone:{},chunkDone:{},wdChunkDone:{},water:0,counterValues:{},calories:'',protein:'',weight:'',gym:false,devotion:{memoryVerse:'',chapters:{ot:0,nt:0,psalms:0,proverbs:0},prayer5:false,prayerOfDay:'',newIdea:'',prayerRequests:[],thankful:[]},reading:{today:'',passages:[],lessons:''}});
     if(!data.days[key]) data.days[key]=def();
     if(!data.days[key].devotion) data.days[key].devotion=def().devotion;
     if(!data.days[key].counterValues) data.days[key].counterValues={};
     if(!data.days[key].wdChunkDone) data.days[key].wdChunkDone={};
     return data.days[key];
   }
-  ensureDayReadonly(data,key){ return data.days[key] || {dailyDone:{},weeklyDone:{},chunkDone:{},wdChunkDone:{},water:0,counterValues:{},calories:'',protein:'',weight:'',gym:false,devotion:{memoryVerse:'',chapters:{ot:0,nt:0,psalms:0,proverbs:0},prayer5:false,prayerOfDay:'',newIdea:'',prayerRequests:[],thankful:[]}}; }
+  ensureDayReadonly(data,key){ return data.days[key] || {dailyDone:{},weeklyDone:{},chunkDone:{},wdChunkDone:{},water:0,counterValues:{},calories:'',protein:'',weight:'',gym:false,devotion:{memoryVerse:'',chapters:{ot:0,nt:0,psalms:0,proverbs:0},prayer5:false,prayerOfDay:'',newIdea:'',prayerRequests:[],thankful:[]},reading:{today:'',passages:[],lessons:''}}; }
 
   addListItem(path,item){ this.update(data=>{ let n=data; for(let i=0;i<path.length-1;i++) n=n[path[i]]; n[path[path.length-1]].push(item); }); }
   removeListItem(path,id){ this.update(data=>{ let n=data; for(let i=0;i<path.length-1;i++) n=n[path[i]]; n[path[path.length-1]]=n[path[path.length-1]].filter(x=>x.id!==id); }); }
@@ -889,7 +889,10 @@ class Component extends DCLogic {
   setCounterField(id,field,val){ this.update(data=>{ const c=data.counters.find(x=>x.id===id); if(c) c[field]=val; }); }
   toggleCounterDecimals(id){ this.update(data=>{ const c=data.counters.find(x=>x.id===id); if(c) c.decimals=!c.decimals; }); }
 
-  setDevotionField(field,value){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.devotion[field]=value; }); }
+  setDevotionField(field,value,dateKey){ this.update(data=>{ const day=this.ensureDay(data,dateKey||this.state.viewDate); day.devotion[field]=value; }); }
+  setReadingField(field,value){ this.update(data=>{ const day=this.ensureDay(data,U.todayKey()); if(!day.reading) day.reading={today:'',passages:[],lessons:''}; day.reading[field]=value; }); }
+  addReadingPassage(text){ if(!text||!text.trim())return; this.update(data=>{ const day=this.ensureDay(data,U.todayKey()); if(!day.reading) day.reading={today:'',passages:[],lessons:''}; day.reading.passages.push({id:U.uid(),text:text.trim()}); }); }
+  removeReadingPassage(id){ this.update(data=>{ const day=this.ensureDay(data,U.todayKey()); if(day.reading) day.reading.passages=day.reading.passages.filter(p=>p.id!==id); }); }
   togglePrayer5(){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.devotion.prayer5=!day.devotion.prayer5; }); }
   addDevotionListItem(field,value){ if(!value||!value.trim())return; this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); if(!Array.isArray(day.devotion[field])) day.devotion[field]=[]; day.devotion[field].push(value); }); }
   removeDevotionListItem(field,idx){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.devotion[field].splice(idx,1); }); }
@@ -1869,7 +1872,7 @@ class Component extends DCLogic {
     const devo = bodyDayRaw.devotion;
     const chapters = devo.chapters || {ot:0,nt:0,psalms:0,proverbs:0};
     vals.devo = { memoryVerse: devo.memoryVerse, setMemoryVerse:(e)=>this.setDevotionField('memoryVerse',e.target.value), prayer5: devo.prayer5, togglePrayer5:()=>this.togglePrayer5(),
-      prayerOfDay: devo.prayerOfDay, setPrayerOfDay:(e)=>this.setDevotionField('prayerOfDay',e.target.value), newIdea: devo.newIdea, setNewIdea:(e)=>this.setDevotionField('newIdea',e.target.value),
+      prayerOfDay: devo.prayerOfDay, setPrayerOfDay:(e)=>this.setDevotionField('prayerOfDay',e.target.value),
       chapterInputs: U2.BIBLE_CATEGORIES.map((c,i)=>({ key:c.key, label:c.label, value: chapters[c.key]||0, color: BIBLE_COLORS[i], setValue:(e)=>this.setChapterCount(c.key,e.target.value) })),
       reqEl: this.buildTextListEditor('prayerRequests', devo.prayerRequests), thankEl: this.buildTextListEditor('thankful', devo.thankful) };
     // Past entries by date — same idea as the journal's history list, so old prayer
@@ -1880,7 +1883,7 @@ class Component extends DCLogic {
     });
     vals.thankfulHistory = devoHistory('thankful');
     vals.prayerHistory = devoHistory('prayerRequests');
-    const devoMetCount = (dv)=>{ const ch=dv.chapters||{}; let met=0; if(dv.memoryVerse) met++; if((ch.nt||0)>=2) met++; if((ch.ot||0)>=3) met++; if((ch.psalms||0)>=3) met++; if((ch.proverbs||0)>=1) met++; if(dv.prayer5) met++; if(dv.prayerOfDay) met++; if(dv.newIdea) met++; if((dv.prayerRequests||[]).length>=3) met++; if((dv.thankful||[]).length>=3) met++; return met; };
+    const devoMetCount = (dv)=>{ const ch=dv.chapters||{}; let met=0; if(dv.memoryVerse) met++; if((ch.nt||0)>=2) met++; if((ch.ot||0)>=3) met++; if((ch.psalms||0)>=3) met++; if((ch.proverbs||0)>=1) met++; if(dv.prayer5) met++; if(dv.prayerOfDay) met++; if((dv.prayerRequests||[]).length>=3) met++; if((dv.thankful||[]).length>=3) met++; return met; };
     vals.viewDateLabel = viewDate; vals.viewDatePrev=()=>this.shiftViewDate(-1); vals.viewDateNext=()=>this.shiftViewDate(1); vals.viewDateToday=()=>this.setViewDate(today);
 
     const bibleTotals = {ot:0,nt:0,psalms:0,proverbs:0};
@@ -1891,6 +1894,20 @@ class Component extends DCLogic {
 
     vals.journalVM = data.journal.map(j=>({ id:j.id, dateLabel:j.dateKey, text:j.text, remove:()=>this.update(d=>{ d.journal=d.journal.filter(x=>x.id!==j.id); }) }));
     vals.addJournal = ()=>{ const el=document.getElementById('journalDraft'); if(el && el.value.trim()){ this.addJournalEntry(el.value.trim()); el.value=''; } };
+
+    // Journal "Bible" section — same devotion.newIdea field the Devotion tile used to show
+    // (now removed from there), always pinned to *today* rather than following Devotion's
+    // own date-nav, since Journal has no date-nav of its own.
+    vals.journalBible = { text: day0.devotion.newIdea||'', setText:(e)=>this.setDevotionField('newIdea', e.target.value, today) };
+    // Journal "Reading" section — day-scoped, deliberately separate from the Book List
+    // tile's per-book to-read/reading/done tracker; nothing here is required to "complete".
+    const readingToday = day0.reading || {today:'',passages:[],lessons:''};
+    vals.journalReading = {
+      today: readingToday.today, setToday:(e)=>this.setReadingField('today', e.target.value),
+      lessons: readingToday.lessons, setLessons:(e)=>this.setReadingField('lessons', e.target.value),
+      passages: (readingToday.passages||[]).map(p=>({ id:p.id, text:p.text, remove:()=>this.removeReadingPassage(p.id) })),
+      addPassageKey:(e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addReadingPassage(e.target.value.trim()); e.target.value=''; } }
+    };
 
     vals.booksVM = data.bookList.map(b=>({ id:b.id, title:b.title, author:b.author, status:b.status, renameTitle:(e)=>this.renameListItem(['bookList'],b.id,'title',e.target.value), renameAuthor:(e)=>this.renameListItem(['bookList'],b.id,'author',e.target.value), setStatus:(e)=>this.renameListItem(['bookList'],b.id,'status',e.target.value), remove:()=>this.removeListItem(['bookList'],b.id), drag:this.dragRowProps(['bookList'],b.id) }));
     vals.addBook = ()=>{ const t=document.getElementById('bookTitleDraft'), a=document.getElementById('bookAuthorDraft'); if(t.value.trim()){ this.addListItem(['bookList'],{id:U2.uid(),title:t.value.trim(),author:a.value.trim(),status:'to-read'}); t.value=''; a.value=''; } };
@@ -2096,6 +2113,23 @@ class Component extends DCLogic {
       vals.hasCocktail = vals.cocktailVM.length>0;
 
       vals.leechVM = rt.items.filter(it=>it.leech).map(it=>({ id:it.id, term:it.term, domain:it.domain, reviewCount:it.reviewCount }));
+    }
+
+    // Journal "Classes" section — reuses the exact same Retention-tab fields/setters (today's
+    // main/quick notes, yesterday's day column) and the German/Python vocab & grammar banks,
+    // so nothing here is ever entered twice between Journal and Review/German/Python.
+    {
+      const todayRt = vals.retentionColumns.find(c=>c.isToday);
+      const yestKey = U2.addDays(today,-1);
+      const yestRt = vals.retentionColumns.find(c=>c.key===yestKey);
+      const quickAdd = (key)=>()=>{ const t=document.getElementById('jClass'+key+'TermDraft'), d=document.getElementById('jClass'+key+'DefDraft'); if(t && t.value.trim()){ this.addStudyBankEntry(key,t.value,d?d.value:'','',''); t.value=''; if(d)d.value=''; } };
+      vals.journalClasses = {
+        mainToday: todayRt.notes, setMainToday: todayRt.setNotes,
+        quickToday: todayRt.journal, setQuickToday: todayRt.setJournal,
+        yesterday: yestRt,
+        german: { vocabVM: vals.german.vocabVM, grammarVM: vals.german.grammarVM, quickAdd: quickAdd('german') },
+        python: { vocabVM: vals.python.vocabVM, grammarVM: vals.python.grammarVM, quickAdd: quickAdd('python') }
+      };
     }
 
     const nowIso = new Date().toISOString();
@@ -2476,7 +2510,7 @@ class Component extends DCLogic {
         }
         case 'dayDevotion': {
           const met = devoMetCount(todayDevo);
-          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--cmd-strong)'}}, met+'/10 today'),
+          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--cmd-strong)'}}, met+'/9 today'),
               todayDevo.memoryVerse ? E('div',{style:{fontSize:11,color:'var(--cmd-strong-2)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, todayDevo.memoryVerse) : null),
             full: E('div',null,
               E('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',maxWidth:280}},
@@ -2485,7 +2519,6 @@ class Component extends DCLogic {
                 E('div',{className:'field'}, E('label',null,'Memory verse'), E('input',{className:'input',defaultValue:vals.devo.memoryVerse,onBlur:vals.devo.setMemoryVerse})),
                 E('div',{className:'field'}, E('label',{style:{display:'flex',alignItems:'center',gap:8}}, E('input',{type:'checkbox',className:'cmd-chk',checked:vals.devo.prayer5,onChange:vals.devo.togglePrayer5}),'5-minute prayer')),
                 E('div',{className:'field',style:{gridColumn:'1/-1'}}, E('label',null,'Prayer of the day'), E('textarea',{className:'input',defaultValue:vals.devo.prayerOfDay,onBlur:vals.devo.setPrayerOfDay})),
-                E('div',{className:'field',style:{gridColumn:'1/-1'}}, E('label',null,'One new idea from Scripture'), E('textarea',{className:'input',defaultValue:vals.devo.newIdea,onBlur:vals.devo.setNewIdea})),
                 E('div',null, E('label',{className:'text-muted',style:{fontSize:12}},'Prayer requests (3)'), vals.devo.reqEl),
                 E('div',null, E('label',{className:'text-muted',style:{fontSize:12}},'Thankful for (3)'), vals.devo.thankEl)),
               E('div',{style:{marginTop:14,padding:10,border:'1px solid var(--color-divider)',borderRadius:8,background:'var(--color-surface)'}},
@@ -2502,7 +2535,7 @@ class Component extends DCLogic {
               E('div',{style:{marginTop:14,paddingTop:12,borderTop:'1px solid var(--color-divider)'}}, E('h6',{style:{marginBottom:8}},'Chapters read today'),
                 E('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:10}}, vals.devo.chapterInputs.map(ci=>E('div',{key:ci.key,className:'field'},
                   E('label',null,ci.label), E('input',{className:'cmd-num',style:{width:'100%'},type:'number',min:0,defaultValue:ci.value,onBlur:ci.setValue}))))),
-              E('div',{style:{marginTop:14}}, E('h6',null,'Devotion consistency'), this.buildHeatmapHistory((key)=>{ const d=data.days[key]; if(!d) return null; return devoMetCount(d.devotion)/10*100; }, 4))) };
+              E('div',{style:{marginTop:14}}, E('h6',null,'Devotion consistency'), this.buildHeatmapHistory((key)=>{ const d=data.days[key]; if(!d) return null; return devoMetCount(d.devotion)/9*100; }, 4))) };
         }
         case 'dayBible': {
           return { condensed: E('div',null, vals.bibleCatVM.map(c=>E('div',{key:c.key,style:{marginBottom:6}},
@@ -2516,11 +2549,53 @@ class Component extends DCLogic {
         }
         case 'dayJournal': {
           return { condensed: vals.journalVM.length ? E('div',null, E('div',{style:{fontSize:11,color:'var(--cmd-strong)'}},vals.journalVM[0].dateLabel), E('p',{style:{fontSize:12,margin:'2px 0 0',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical'}},vals.journalVM[0].text), vals.journalVM.length>1?E('div',{style:{fontSize:11,color:'var(--cmd-strong-2)'}},'+'+(vals.journalVM.length-1)+' more entries'):null) : E('p',{className:'text-muted',style:{fontSize:12}},'No entries yet.'),
-            full: E('div',null, E('textarea',{className:'input',style:{marginTop:4},placeholder:'Write an entry… (logs to the previous day until your day-start hour, see Settings)',id:'journalDraft'}),
-              E('button',{className:'btn btn-secondary btn-block',onClick:vals.addJournal},'Add entry'),
-              vals.journalVM.map(j=>E('div',{key:j.id,style:{borderTop:'1px solid var(--color-divider)',padding:'8px 0'}},
-                E('div',{style:{display:'flex',justifyContent:'space-between'}}, E('b',{style:{fontSize:12,color:'var(--cmd-strong)'}},j.dateLabel), E('button',{className:'cmd-x-btn',onClick:j.remove},'×')),
-                E('p',{style:{margin:'4px 0 0',fontSize:14}},j.text)))) };
+            full: (()=>{
+              const jc = vals.journalClasses, jr = vals.journalReading, yr = jc.yesterday;
+              const secBox = (title,children)=> E('div',{style:{marginTop:14,padding:10,border:'1px solid var(--color-divider)',borderRadius:8,background:'var(--color-surface)'}},
+                E('div',{style:{fontWeight:600,fontSize:13,marginBottom:8}},title), children);
+              const bankMini = (label,vm)=> E('div',null,
+                E('div',{className:'text-muted',style:{fontSize:11,marginBottom:2}},label),
+                vm.length ? E('div',{style:{maxHeight:90,overflowY:'auto'}}, vm.slice(0,6).map(v=>E('div',{key:v.id,style:{fontSize:12,padding:'1px 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, v.term?E('span',null,E('b',null,v.term),v.definition?' — '+v.definition:''):v.rule)))
+                  : E('p',{className:'text-muted',style:{fontSize:11}},'Empty.'));
+              const classDomain = (key,label,d)=> E('div',null,
+                E('h6',{style:{margin:'0 0 6px'}},label),
+                bankMini('Vocab',d.vocabVM), bankMini('Grammar',d.grammarVM),
+                E('div',{style:{display:'flex',gap:4,marginTop:6}},
+                  E('input',{className:'input',id:'jClass'+key+'TermDraft',style:{fontSize:11},placeholder:'Term'}),
+                  E('input',{className:'input',id:'jClass'+key+'DefDraft',style:{fontSize:11},placeholder:'Definition'}),
+                  E('button',{className:'btn btn-secondary',style:{fontSize:11,flex:'none'},onClick:d.quickAdd},'+')));
+              return E('div',null,
+                secBox('Past logs — previous journal entries',
+                  vals.journalVM.length ? E('div',{style:{maxHeight:180,overflowY:'auto'}}, vals.journalVM.map(j=>E('div',{key:j.id,style:{borderTop:'1px solid var(--color-divider)',padding:'6px 0'}},
+                    E('div',{style:{display:'flex',justifyContent:'space-between'}}, E('b',{style:{fontSize:11,color:'var(--cmd-strong)'}},j.dateLabel), E('button',{className:'cmd-x-btn',onClick:j.remove},'×')),
+                    E('p',{style:{margin:'2px 0 0',fontSize:13}},j.text))))
+                    : E('p',{className:'text-muted',style:{fontSize:12}},'No entries yet.')),
+                secBox('Bible — what I learned today',
+                  E('textarea',{className:'input',defaultValue:vals.journalBible.text,onBlur:vals.journalBible.setText,placeholder:'One takeaway from today’s reading…'})),
+                secBox('Classes (review)',
+                  E('div',null,
+                    E('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}},
+                      E('div',{className:'field'}, E('label',null,'Main of the day'), E('textarea',{className:'input',defaultValue:jc.mainToday,onBlur:jc.setMainToday})),
+                      E('div',{className:'field'}, E('label',null,'Quick of the day'), E('textarea',{className:'input',style:{minHeight:40},defaultValue:jc.quickToday,onBlur:jc.setQuickToday}))),
+                    E('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginTop:10}},
+                      classDomain('german','German',jc.german), classDomain('python','Python',jc.python)),
+                    yr ? E('div',{style:{marginTop:10,paddingTop:10,borderTop:'1px solid var(--color-divider)'}},
+                      E('div',{style:{display:'flex',alignItems:'center',gap:6}}, E('h6',{style:{margin:0}},'Yesterday’s review'), !yr.editable?E('button',{className:'cmd-x-btn',style:{fontSize:10},title:'Edit yesterday',onClick:yr.unlock},'✎'):null),
+                      E('textarea',{className:'input',style:{marginTop:6,fontSize:12},placeholder:'Notes…',defaultValue:yr.notes,onBlur:yr.setNotes,disabled:!yr.editable}),
+                      E('textarea',{className:'input',style:{marginTop:4,fontSize:12,minHeight:30},placeholder:'One-liner reflection…',defaultValue:yr.journal,onBlur:yr.setJournal,disabled:!yr.editable}),
+                      yr.vocab.length ? E('div',{style:{marginTop:4,display:'flex',flexWrap:'wrap',gap:4}}, yr.vocab.map(v=>E('span',{key:v.id,className:'tag tag-neutral',style:{fontSize:10}},v.term))) : null) : null)),
+                secBox('Reading',
+                  E('div',null,
+                    E('div',{className:'field'}, E('label',null,'Today’s reading'), E('textarea',{className:'input',style:{minHeight:40},defaultValue:jr.today,onBlur:jr.setToday})),
+                    E('div',{className:'field',style:{marginTop:8}}, E('label',null,'Good passages / quotes'),
+                      jr.passages.map(p=>E('div',{key:p.id,style:{display:'flex',alignItems:'center',gap:6,padding:'2px 0'}}, E('span',{style:{flex:1,fontSize:13}},p.text), E('button',{className:'cmd-x-btn',onClick:p.remove},'×'))),
+                      E('input',{className:'input',style:{fontSize:12,marginTop:4},placeholder:'Add + Enter',onKeyDown:jr.addPassageKey})),
+                    E('div',{className:'field',style:{marginTop:8}}, E('label',null,'Lessons'), E('textarea',{className:'input',defaultValue:jr.lessons,onBlur:jr.setLessons})))),
+                secBox('Daily journal',
+                  E('div',null,
+                    E('textarea',{className:'input',placeholder:'Write an entry… (logs to the previous day until your day-start hour, see Settings)',id:'journalDraft'}),
+                    E('button',{className:'btn btn-secondary btn-block',style:{marginTop:6},onClick:vals.addJournal},'Add entry'))));
+            })() };
         }
         case 'dayBooks': {
           const counts = {'to-read':0,reading:0,done:0}; vals.booksVM.forEach(b=>{ counts[b.status]=(counts[b.status]||0)+1; });
