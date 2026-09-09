@@ -488,6 +488,8 @@ const STUDY_TAB_PREFIX = {german:'g', python:'py'};
 const TAB_BUILTIN_TILES = {
   dashboard: [
     {key:'dTodo', title:'To Do', size:'wide'},
+    {key:'dDrills', title:'Daily Drills', size:'wide'},
+    {key:'dReview', title:'Daily Review', size:'wide'},
     {key:'dWeekdayChunks', title:'Weekday schedule', size:'full'},
     {key:'dWeekly', title:'Weekly recurring (alt)', size:'wide'},
     {key:'dChunks', title:'Daily chunks', size:'large'},
@@ -508,6 +510,7 @@ const TAB_BUILTIN_TILES = {
     {key:'dayBible', title:'Bible progress', size:'wide'},
     {key:'dayJournal', title:'Journal', size:'full'},
     {key:'dayBooks', title:'Book list', size:'wide'},
+    {key:'dayDrills', title:'Daily Drills', size:'wide'},
     {key:'dayDebate', title:'Debate', size:'full'}
   ],
   body: [
@@ -627,6 +630,8 @@ class Component extends DCLogic {
     if(!data.reminders) data.reminders=[];
     if(!data.pinnedNoteSections) data.pinnedNoteSections={};
     if(!data.stocks) data.stocks=[];
+    if(!data.dailyDrills) data.dailyDrills=[];
+    data.dailyDrills.forEach(d=>{ if(d.lesson===undefined) d.lesson=''; if(d.detail===undefined) d.detail=''; if(d.done===undefined) d.done=false; });
     if(!data.debate) data.debate={premises:[],evidence:[],arguments:[]};
     if(!data.debate.premises) data.debate.premises=[];
     if(!data.debate.evidence) data.debate.evidence=[];
@@ -867,6 +872,8 @@ class Component extends DCLogic {
   toggleDailyDone(id){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.dailyDone[id]=!day.dailyDone[id]; }); }
   toggleAdHoc(id){ this.update(data=>{ const it=data.adHoc.find(x=>x.id===id); if(it) it.done=!it.done; }); }
   toggleWeeklyDay(id,day){ this.update(data=>{ const t=data.weeklyTasks.find(x=>x.id===id); if(t){ const i=t.days.indexOf(day); if(i>=0) t.days.splice(i,1); else t.days.push(day); } }); }
+  toggleDrillDone(id){ this.update(data=>{ const d=data.dailyDrills.find(x=>x.id===id); if(d) d.done=!d.done; }); }
+  toggleReviewCheck(pickId){ this.update(data=>{ const day=this.ensureRetentionDay(data,U.todayKey()); if(!day.reviewChecks) day.reviewChecks={}; day.reviewChecks[pickId]=!day.reviewChecks[pickId]; }); }
   toggleDebateLink(argId,kind,itemId){ this.update(data=>{ const a=data.debate.arguments.find(x=>x.id===argId); if(!a) return; if(!a[kind]) a[kind]=[]; const i=a[kind].indexOf(itemId); if(i>=0) a[kind].splice(i,1); else a[kind].push(itemId); }); }
   toggleWeeklyDone(id){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.weeklyDone[id]=!day.weeklyDone[id]; }); }
   toggleChunkDone(id){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.chunkDone[id]=!day.chunkDone[id]; }); }
@@ -1757,6 +1764,7 @@ class Component extends DCLogic {
     (data.weekdayChunks[wd]||[]).forEach(t=>{ totalCount++; if(day0.wdChunkDone[t.id]) doneCount++; });
     Object.keys(data.chunks).forEach(cn=>data.chunks[cn].forEach(it=>{ totalCount++; if(day0.chunkDone[it.id]) doneCount++; }));
     data.adHoc.forEach(t=>{ const dueToday = t.urgency==='today' || (t.dueAt && t.dueAt.slice(0,10)===today); if(dueToday){ totalCount++; if(t.done) doneCount++; } });
+    data.dailyDrills.forEach(d=>{ totalCount++; if(d.done) doneCount++; });
     vals.todayDoneCount = doneCount; vals.todayTotalCount = totalCount;
     vals.todayProgressPct = totalCount?Math.round(doneCount/totalCount*100):0;
     vals.todayProgressBarStyle = { width: vals.todayProgressPct+'%' };
@@ -1804,6 +1812,20 @@ class Component extends DCLogic {
     vals.adHocVM = adHocMapped.filter(it=>!hc||adHocAllDone||!it.done)
       .sort((a,b)=>(a.done-b.done) || ((b.urgency==='urgent')-(a.urgency==='urgent')));
     vals.addAdHocKey = (e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addListItem(['adHoc'],{id:U2.uid(),text:e.target.value.trim(),done:false,urgency:'',dueAt:''}); e.target.value=''; } };
+
+    // Daily Drills — richer than ad-hoc tasks (a title, a lesson label, and a paragraph of
+    // detail); the same list/checkbox backs both the full Daily-tab tile and the compact
+    // lesson+title view on the Dashboard, so checking one off checks off the other.
+    const drillsMapped = data.dailyDrills.map(d=>({ id:d.id, title:d.title, lesson:d.lesson, detail:d.detail, done:d.done,
+      toggle:()=>this.toggleDrillDone(d.id),
+      renameTitle:(e)=>this.renameListItem(['dailyDrills'],d.id,'title',e.target.value),
+      renameLesson:(e)=>this.renameListItem(['dailyDrills'],d.id,'lesson',e.target.value),
+      renameDetail:(e)=>this.renameListItem(['dailyDrills'],d.id,'detail',e.target.value),
+      remove:()=>this.removeListItem(['dailyDrills'],d.id), drag:this.dragRowProps(['dailyDrills'],d.id) }));
+    const drillsAllDone = drillsMapped.length>0 && drillsMapped.every(d=>d.done);
+    vals.dailyDrillsVM = drillsMapped.filter(d=>!hc||drillsAllDone||!d.done).sort((a,b)=>a.done-b.done);
+    vals.addDrill = ()=>{ const t=document.getElementById('drillTitleDraft'), l=document.getElementById('drillLessonDraft'), dt=document.getElementById('drillDetailDraft');
+      if(t && t.value.trim()){ this.addListItem(['dailyDrills'],{id:U2.uid(),title:t.value.trim(),lesson:l?l.value.trim():'',detail:dt?dt.value.trim():'',done:false}); t.value=''; if(l)l.value=''; if(dt)dt.value=''; } };
 
     vals.weekdayChunksVM = U2.WEEKDAYS.map(dname=>{
       const items = (data.weekdayChunks[dname]||[]).map(it=>({ id:it.id, text:it.text, done: !!day0.wdChunkDone[it.id], toggle:()=>this.toggleWdChunkDone(it.id), rename:(e)=>this.renameListItem(['weekdayChunks',dname],it.id,'text',e.target.value), remove:()=>this.removeListItem(['weekdayChunks',dname],it.id), drag:this.dragRowProps(['weekdayChunks',dname],it.id) }));
@@ -2097,6 +2119,13 @@ class Component extends DCLogic {
         dayKeys.forEach(k=>{ const day=rt.days[k]; if(day) day.vocab.forEach(v=>pool.push({id:'v-'+v.id,kind:'vocab',prompt:v.term,answer:v.domain,domain:v.domain,flagged:v.flagged})); });
         rt.items.filter(it=>!it.next_due || it.next_due<=U2.addDays(today,6)).forEach(it=>pool.push({id:'r-'+it.id,kind:'concept',prompt:it.term,answer:it.domain,domain:it.domain,flagged:false}));
         STUDY_DOMAINS.forEach(key=>{ ((data[key].curriculum&&data[key].curriculum.modules)||[]).forEach((m,mi)=>(m.daily_drills||[]).forEach((d,di)=>pool.push({id:'d-'+key+mi+'-'+di,kind:'drill',prompt:d.prompt||d.question||'',answer:d.answer||'',domain:key,flagged:false}))); });
+        // Full concept/grammar/code/vocab coverage: also pull from the persistent
+        // Vocabulary/Grammar banks on the German & Python tabs, not just the day-jotted
+        // quick vocab above — so "review everything" actually means everything.
+        STUDY_DOMAINS.forEach(key=>{
+          (data[key].vocabBank||[]).forEach(v=>pool.push({id:'vb-'+v.id,kind:'vocab',prompt:v.term,answer:v.definition||'',domain:key,flagged:false}));
+          (data[key].grammarBank||[]).forEach(g=>pool.push({id:'gb-'+g.id,kind:'grammar',prompt:g.rule,answer:g.explanation||'',domain:key,flagged:false}));
+        });
         return pool;
       };
       vals.generateCocktail = ()=>{
@@ -2113,7 +2142,25 @@ class Component extends DCLogic {
       vals.hasCocktail = vals.cocktailVM.length>0;
 
       vals.leechVM = rt.items.filter(it=>it.leech).map(it=>({ id:it.id, term:it.term, domain:it.domain, reviewCount:it.reviewCount }));
+
+      // Daily Review (Dashboard): one pick each from yesterday, today, a random spot in the
+      // full review pool, and last week — seeded off the date so the picks stay put across
+      // re-renders/reloads for the day instead of reshuffling every time.
+      const seedFor = (str)=>{ let h=0; for(let i=0;i<str.length;i++){ h=(h*31+str.charCodeAt(i))|0; } return Math.abs(h); };
+      const pickSeeded = (arr,seed)=> arr.length ? arr[seedFor(seed)%arr.length] : null;
+      const fromRtDay = (key,label)=>{ const day=rt.days[key]; if(!day||!day.vocab||!day.vocab.length) return null; const v=pickSeeded(day.vocab,today+key+label); return { id:'dr-'+label+'-'+v.id, prompt:v.term, domain:v.domain, source:label }; };
+      const reviewPool = buildCocktailPool();
+      const randomRaw = pickSeeded(reviewPool, today+'random');
+      const randomPick = randomRaw ? { id:'dr-Random-'+randomRaw.id, prompt:randomRaw.prompt, domain:randomRaw.domain, source:'Random' } : null;
+      const rtDayToday = rt.days[today] || {}; const reviewChecks = rtDayToday.reviewChecks || {};
+      vals.dailyReviewVM = [fromRtDay(yesterday,'Yesterday'), fromRtDay(today,'Today'), randomPick, fromRtDay(U2.addDays(today,-7),'Last week')]
+        .filter(Boolean).map(p=>({ ...p, checked:!!reviewChecks[p.id], toggle:()=>this.toggleReviewCheck(p.id) }));
     }
+    // Both new Dashboard checklists were built after the today-progress tally above ran, so
+    // fold their counts in here rather than duplicating the whole tally computation earlier.
+    vals.dailyReviewVM.forEach(p=>{ vals.todayTotalCount++; if(p.checked) vals.todayDoneCount++; });
+    vals.todayProgressPct = vals.todayTotalCount?Math.round(vals.todayDoneCount/vals.todayTotalCount*100):0;
+    vals.todayProgressBarStyle = { width: vals.todayProgressPct+'%' };
 
     // Journal "Classes" section — reuses the exact same Retention-tab fields/setters (today's
     // main/quick notes, yesterday's day column) and the German/Python vocab & grammar banks,
@@ -2607,6 +2654,42 @@ class Component extends DCLogic {
                 E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:b.remove},'×'))),
               E('div',{style:{display:'flex',gap:6,marginTop:8}}, E('input',{className:'input',id:'bookTitleDraft',placeholder:'Title'}), E('input',{className:'input',id:'bookAuthorDraft',placeholder:'Author'}), E('button',{className:'btn btn-secondary',onClick:vals.addBook},'Add'))) };
         }
+        case 'dayDrills': {
+          const doneN = vals.dailyDrillsVM.filter(d=>d.done).length;
+          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--cmd-strong)',marginBottom:4}}, doneN+'/'+vals.dailyDrillsVM.length+' done'),
+              shortList(vals.dailyDrillsVM,3,d=>rowLine(d.id,(d.lesson?d.lesson+' — ':'')+d.title,d.done))),
+            full: E('div',null,
+              vals.dailyDrillsVM.map(d=>E('div',{key:d.id,...d.drag,style:{padding:'6px 0',borderBottom:'1px solid var(--color-divider)'}},
+                E('div',{style:{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}},
+                  E('span',{title:'Drag to reorder',style:{cursor:'grab',opacity:.4,flex:'none',fontSize:12}},'⋮⋮'),
+                  E('input',{type:'checkbox',className:'cmd-chk',checked:d.done,onChange:d.toggle}),
+                  E('input',{className:'cmd-txt',style:{fontWeight:600,flex:1,minWidth:100},defaultValue:d.title,onBlur:d.renameTitle}),
+                  E('input',{className:'cmd-txt',style:{maxWidth:120,fontSize:12},placeholder:'Lesson',defaultValue:d.lesson,onBlur:d.renameLesson}),
+                  E('button',{className:'cmd-x-btn',onClick:d.remove},'×')),
+                E('textarea',{className:'input',style:{marginTop:4,fontSize:12,minHeight:50},placeholder:'Detail…',defaultValue:d.detail,onBlur:d.renameDetail}))),
+              E('div',{style:{marginTop:8,padding:8,border:'1px solid var(--color-divider)',borderRadius:8}},
+                E('div',{style:{display:'flex',gap:6}}, E('input',{className:'input',id:'drillTitleDraft',placeholder:'Title'}), E('input',{className:'input',id:'drillLessonDraft',style:{maxWidth:120},placeholder:'Lesson'})),
+                E('textarea',{className:'input',style:{marginTop:6,fontSize:12},id:'drillDetailDraft',placeholder:'Detail…'}),
+                E('button',{className:'btn btn-secondary btn-block',style:{marginTop:6},onClick:vals.addDrill},'Add drill'))) };
+        }
+        case 'dDrills': {
+          const doneN = vals.dailyDrillsVM.filter(d=>d.done).length;
+          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--cmd-strong)',marginBottom:4}}, doneN+'/'+vals.dailyDrillsVM.length+' done'),
+              vals.dailyDrillsVM.length ? shortList(vals.dailyDrillsVM,4,d=>rowLine(d.id,(d.lesson?d.lesson+' — ':'')+d.title,d.done)) : E('p',{className:'text-muted',style:{fontSize:11}},'None — add one from the Daily tab.')),
+            full: vals.dailyDrillsVM.length ? E('div',null, vals.dailyDrillsVM.map(d=>E('label',{key:d.id,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:'1px solid var(--color-divider)',cursor:'pointer'}},
+                E('input',{type:'checkbox',className:'cmd-chk',checked:d.done,onChange:d.toggle}),
+                E('span',{style:{textDecoration:d.done?'line-through':'none',opacity:d.done?.55:1}}, (d.lesson?E('b',null,d.lesson+' — '):null), d.title)))) : E('p',{className:'text-muted',style:{fontSize:12}},'None — add one from the Daily tab.') };
+        }
+        case 'dReview': {
+          const doneN = vals.dailyReviewVM.filter(p=>p.checked).length;
+          return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--cmd-strong)',marginBottom:4}}, doneN+'/'+vals.dailyReviewVM.length+' reviewed'),
+              vals.dailyReviewVM.length ? shortList(vals.dailyReviewVM,4,p=>rowLine(p.id,p.source+': '+p.prompt,p.checked)) : E('p',{className:'text-muted',style:{fontSize:11}},'Nothing to review yet — add vocab/grammar in German or Python.')),
+            full: vals.dailyReviewVM.length ? E('div',null, vals.dailyReviewVM.map(p=>E('label',{key:p.id,style:{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid var(--color-divider)',cursor:'pointer'}},
+                E('input',{type:'checkbox',className:'cmd-chk',checked:p.checked,onChange:p.toggle}),
+                E('span',{className:'tag tag-neutral',style:{fontSize:9,flex:'none'}},p.source),
+                E('span',{style:{textDecoration:p.checked?'line-through':'none',opacity:p.checked?.55:1,flex:1}}, p.prompt),
+                E('span',{className:'tag',style:{fontSize:9,flex:'none'}},p.domain)))) : E('p',{className:'text-muted',style:{fontSize:12}},'Nothing to review yet — add vocab/grammar in German or Python.') };
+        }
       }
       return null;
     };
@@ -2788,8 +2871,15 @@ class Component extends DCLogic {
             : E('p',{className:'text-muted',style:{fontSize:12}},'No resources — import a curriculum.') };
       }
       if(id===prefix+'Notes'){
+        // A big paste (a table, a whole chart) used to make this textarea grow to fit its
+        // content, which blew out the tile/page height. Cap it and let it scroll instead;
+        // long notes stay collapsed to a manageable height until expanded on purpose.
+        const big = (vm.notes||'').length > 1200;
+        const expanded = this.getUi(prefix+'notesExpanded','open',false);
         return { condensed: vm.notes ? E('p',{style:{fontSize:12,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:4,WebkitBoxOrient:'vertical'}},vm.notes) : E('span',{className:'text-muted',style:{fontSize:12}},'Empty — tap to write.'),
-          full: E('textarea',{className:'input',style:{minHeight:160},defaultValue:vm.notes,onBlur:vm.setNotesBlur}) };
+          full: E('div',null,
+            big ? E('button',{className:'btn btn-ghost',style:{fontSize:11,padding:'2px 0',marginBottom:4},onClick:()=>this.toggleUi(prefix+'notesExpanded','open',false)}, expanded?'▾ Collapse':'▸ Expand ('+vm.notes.length+' chars)') : null,
+            E('textarea',{className:'input',style:{minHeight:160,maxHeight: big&&!expanded?160:600,overflowY:'auto'},defaultValue:vm.notes,onBlur:vm.setNotesBlur})) };
       }
       if(id===prefix+'Lesson'){
         if(vm.allDone) return { condensed: E('p',{className:'text-muted',style:{fontSize:12}},'All lessons complete 🎉'), full: E('p',{className:'text-muted',style:{fontSize:13}},'All lessons complete — import a new curriculum to continue.') };
