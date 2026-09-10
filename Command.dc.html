@@ -510,6 +510,7 @@ const TAB_BUILTIN_TILES = {
     {key:'dayBible', title:'Bible progress', size:'wide'},
     {key:'dayJournal', title:'Journal', size:'full'},
     {key:'dayBooks', title:'Book list', size:'wide'},
+    {key:'dayTagline', title:'Daily Tagline', size:'wide'},
     {key:'dayDrills', title:'Daily Drills', size:'wide'},
     {key:'dayDebate', title:'Debate', size:'full'}
   ],
@@ -606,7 +607,7 @@ class Component extends DCLogic {
       }
       data.body.workoutSeeded = true;
     }
-    Object.keys(data.days||{}).forEach(k=>{ const day=data.days[k]; if(!day.counterValues) day.counterValues={}; if(day.water!==undefined && day.counterValues.water===undefined) day.counterValues.water=day.water; if(!day.wdChunkDone) day.wdChunkDone={}; if(day.devotion && !day.devotion.chapters) day.devotion.chapters={ot:0,nt:0,psalms:0,proverbs:0}; if(!day.reading) day.reading={today:'',passages:[],lessons:''}; });
+    Object.keys(data.days||{}).forEach(k=>{ const day=data.days[k]; if(!day.counterValues) day.counterValues={}; if(day.water!==undefined && day.counterValues.water===undefined) day.counterValues.water=day.water; if(!day.wdChunkDone) day.wdChunkDone={}; if(day.devotion && !day.devotion.chapters) day.devotion.chapters={ot:0,nt:0,psalms:0,proverbs:0}; if(!day.reading) day.reading={today:'',passages:[],lessons:''}; if(!day.tagline) day.tagline={hero:'',verse:'',word:''}; });
     (data.projects||[]).forEach(f=>{ (f.children||[]).forEach(e=>{ if(e.deactivated===undefined) e.deactivated=false; }); });
     (data.adHoc||[]).forEach(a=>{
       if(a.urgency===undefined) a.urgency='';
@@ -846,14 +847,14 @@ class Component extends DCLogic {
   shiftViewDate(n){ this.setState(s=>({viewDate:U.addDays(s.viewDate,n)})); }
 
   ensureDay(data,key){
-    const def = ()=>({dailyDone:{},weeklyDone:{},chunkDone:{},wdChunkDone:{},water:0,counterValues:{},calories:'',protein:'',weight:'',gym:false,devotion:{memoryVerse:'',chapters:{ot:0,nt:0,psalms:0,proverbs:0},prayer5:false,prayerOfDay:'',newIdea:'',prayerRequests:[],thankful:[]},reading:{today:'',passages:[],lessons:''}});
+    const def = ()=>({dailyDone:{},weeklyDone:{},chunkDone:{},wdChunkDone:{},water:0,counterValues:{},calories:'',protein:'',weight:'',gym:false,devotion:{memoryVerse:'',chapters:{ot:0,nt:0,psalms:0,proverbs:0},prayer5:false,prayerOfDay:'',newIdea:'',prayerRequests:[],thankful:[]},reading:{today:'',passages:[],lessons:''},tagline:{hero:'',verse:'',word:''}});
     if(!data.days[key]) data.days[key]=def();
     if(!data.days[key].devotion) data.days[key].devotion=def().devotion;
     if(!data.days[key].counterValues) data.days[key].counterValues={};
     if(!data.days[key].wdChunkDone) data.days[key].wdChunkDone={};
     return data.days[key];
   }
-  ensureDayReadonly(data,key){ return data.days[key] || {dailyDone:{},weeklyDone:{},chunkDone:{},wdChunkDone:{},water:0,counterValues:{},calories:'',protein:'',weight:'',gym:false,devotion:{memoryVerse:'',chapters:{ot:0,nt:0,psalms:0,proverbs:0},prayer5:false,prayerOfDay:'',newIdea:'',prayerRequests:[],thankful:[]},reading:{today:'',passages:[],lessons:''}}; }
+  ensureDayReadonly(data,key){ return data.days[key] || {dailyDone:{},weeklyDone:{},chunkDone:{},wdChunkDone:{},water:0,counterValues:{},calories:'',protein:'',weight:'',gym:false,devotion:{memoryVerse:'',chapters:{ot:0,nt:0,psalms:0,proverbs:0},prayer5:false,prayerOfDay:'',newIdea:'',prayerRequests:[],thankful:[]},reading:{today:'',passages:[],lessons:''},tagline:{hero:'',verse:'',word:''}}; }
 
   addListItem(path,item){ this.update(data=>{ let n=data; for(let i=0;i<path.length-1;i++) n=n[path[i]]; n[path[path.length-1]].push(item); }); }
   removeListItem(path,id){ this.update(data=>{ let n=data; for(let i=0;i<path.length-1;i++) n=n[path[i]]; n[path[path.length-1]]=n[path[path.length-1]].filter(x=>x.id!==id); }); }
@@ -898,6 +899,7 @@ class Component extends DCLogic {
 
   setDevotionField(field,value,dateKey){ this.update(data=>{ const day=this.ensureDay(data,dateKey||this.state.viewDate); day.devotion[field]=value; }); }
   setReadingField(field,value){ this.update(data=>{ const day=this.ensureDay(data,U.todayKey()); if(!day.reading) day.reading={today:'',passages:[],lessons:''}; day.reading[field]=value; }); }
+  setTaglineField(field,value){ this.update(data=>{ const day=this.ensureDay(data,U.todayKey()); if(!day.tagline) day.tagline={hero:'',verse:'',word:''}; day.tagline[field]=value; }); }
   addReadingPassage(text){ if(!text||!text.trim())return; this.update(data=>{ const day=this.ensureDay(data,U.todayKey()); if(!day.reading) day.reading={today:'',passages:[],lessons:''}; day.reading.passages.push({id:U.uid(),text:text.trim()}); }); }
   removeReadingPassage(id){ this.update(data=>{ const day=this.ensureDay(data,U.todayKey()); if(day.reading) day.reading.passages=day.reading.passages.filter(p=>p.id!==id); }); }
   togglePrayer5(){ this.update(data=>{ const day=this.ensureDay(data,this.state.viewDate); day.devotion.prayer5=!day.devotion.prayer5; }); }
@@ -1931,6 +1933,13 @@ class Component extends DCLogic {
       addPassageKey:(e)=>{ if(e.key==='Enter' && e.target.value.trim()){ this.addReadingPassage(e.target.value.trim()); e.target.value=''; } }
     };
 
+    const taglineToday = day0.tagline || {hero:'',verse:'',word:''};
+    vals.dailyTagline = {
+      hero: taglineToday.hero, setHero:(e)=>this.setTaglineField('hero', e.target.value),
+      verse: taglineToday.verse, setVerse:(e)=>this.setTaglineField('verse', e.target.value),
+      word: taglineToday.word, setWord:(e)=>this.setTaglineField('word', e.target.value)
+    };
+
     vals.booksVM = data.bookList.map(b=>({ id:b.id, title:b.title, author:b.author, status:b.status, renameTitle:(e)=>this.renameListItem(['bookList'],b.id,'title',e.target.value), renameAuthor:(e)=>this.renameListItem(['bookList'],b.id,'author',e.target.value), setStatus:(e)=>this.renameListItem(['bookList'],b.id,'status',e.target.value), remove:()=>this.removeListItem(['bookList'],b.id), drag:this.dragRowProps(['bookList'],b.id) }));
     vals.addBook = ()=>{ const t=document.getElementById('bookTitleDraft'), a=document.getElementById('bookAuthorDraft'); if(t.value.trim()){ this.addListItem(['bookList'],{id:U2.uid(),title:t.value.trim(),author:a.value.trim(),status:'to-read'}); t.value=''; a.value=''; } };
 
@@ -2116,16 +2125,10 @@ class Component extends DCLogic {
       // domains fills the rest — regenerated only when the user asks, not every render.
       const buildCocktailPool = ()=>{
         const pool = [];
+        // German/Python are deliberately excluded — their review lives inside the lessons
+        // themselves (German/Python tabs), not in this cross-domain pool.
         dayKeys.forEach(k=>{ const day=rt.days[k]; if(day) day.vocab.forEach(v=>pool.push({id:'v-'+v.id,kind:'vocab',prompt:v.term,answer:v.domain,domain:v.domain,flagged:v.flagged})); });
         rt.items.filter(it=>!it.next_due || it.next_due<=U2.addDays(today,6)).forEach(it=>pool.push({id:'r-'+it.id,kind:'concept',prompt:it.term,answer:it.domain,domain:it.domain,flagged:false}));
-        STUDY_DOMAINS.forEach(key=>{ ((data[key].curriculum&&data[key].curriculum.modules)||[]).forEach((m,mi)=>(m.daily_drills||[]).forEach((d,di)=>pool.push({id:'d-'+key+mi+'-'+di,kind:'drill',prompt:d.prompt||d.question||'',answer:d.answer||'',domain:key,flagged:false}))); });
-        // Full concept/grammar/code/vocab coverage: also pull from the persistent
-        // Vocabulary/Grammar banks on the German & Python tabs, not just the day-jotted
-        // quick vocab above — so "review everything" actually means everything.
-        STUDY_DOMAINS.forEach(key=>{
-          (data[key].vocabBank||[]).forEach(v=>pool.push({id:'vb-'+v.id,kind:'vocab',prompt:v.term,answer:v.definition||'',domain:key,flagged:false}));
-          (data[key].grammarBank||[]).forEach(g=>pool.push({id:'gb-'+g.id,kind:'grammar',prompt:g.rule,answer:g.explanation||'',domain:key,flagged:false}));
-        });
         return pool;
       };
       vals.generateCocktail = ()=>{
@@ -2163,19 +2166,17 @@ class Component extends DCLogic {
     vals.todayProgressBarStyle = { width: vals.todayProgressPct+'%' };
 
     // Journal "Classes" section — reuses the exact same Retention-tab fields/setters (today's
-    // main/quick notes, yesterday's day column) and the German/Python vocab & grammar banks,
-    // so nothing here is ever entered twice between Journal and Review/German/Python.
+    // main/quick notes, yesterday's day column) so nothing here is ever entered twice between
+    // Journal and Review. German/Python are deliberately NOT mirrored here — their review
+    // lives inside the German/Python lessons themselves.
     {
       const todayRt = vals.retentionColumns.find(c=>c.isToday);
       const yestKey = U2.addDays(today,-1);
       const yestRt = vals.retentionColumns.find(c=>c.key===yestKey);
-      const quickAdd = (key)=>()=>{ const t=document.getElementById('jClass'+key+'TermDraft'), d=document.getElementById('jClass'+key+'DefDraft'); if(t && t.value.trim()){ this.addStudyBankEntry(key,t.value,d?d.value:'','',''); t.value=''; if(d)d.value=''; } };
       vals.journalClasses = {
         mainToday: todayRt.notes, setMainToday: todayRt.setNotes,
         quickToday: todayRt.journal, setQuickToday: todayRt.setJournal,
-        yesterday: yestRt,
-        german: { vocabVM: vals.german.vocabVM, grammarVM: vals.german.grammarVM, quickAdd: quickAdd('german') },
-        python: { vocabVM: vals.python.vocabVM, grammarVM: vals.python.grammarVM, quickAdd: quickAdd('python') }
+        yesterday: yestRt
       };
     }
 
@@ -2600,17 +2601,6 @@ class Component extends DCLogic {
               const jc = vals.journalClasses, jr = vals.journalReading, yr = jc.yesterday;
               const secBox = (title,children)=> E('div',{style:{marginTop:14,padding:10,border:'1px solid var(--color-divider)',borderRadius:8,background:'var(--color-surface)'}},
                 E('div',{style:{fontWeight:600,fontSize:13,marginBottom:8}},title), children);
-              const bankMini = (label,vm)=> E('div',null,
-                E('div',{className:'text-muted',style:{fontSize:11,marginBottom:2}},label),
-                vm.length ? E('div',{style:{maxHeight:90,overflowY:'auto'}}, vm.slice(0,6).map(v=>E('div',{key:v.id,style:{fontSize:12,padding:'1px 0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, v.term?E('span',null,E('b',null,v.term),v.definition?' — '+v.definition:''):v.rule)))
-                  : E('p',{className:'text-muted',style:{fontSize:11}},'Empty.'));
-              const classDomain = (key,label,d)=> E('div',null,
-                E('h6',{style:{margin:'0 0 6px'}},label),
-                bankMini('Vocab',d.vocabVM), bankMini('Grammar',d.grammarVM),
-                E('div',{style:{display:'flex',gap:4,marginTop:6}},
-                  E('input',{className:'input',id:'jClass'+key+'TermDraft',style:{fontSize:11},placeholder:'Term'}),
-                  E('input',{className:'input',id:'jClass'+key+'DefDraft',style:{fontSize:11},placeholder:'Definition'}),
-                  E('button',{className:'btn btn-secondary',style:{fontSize:11,flex:'none'},onClick:d.quickAdd},'+')));
               return E('div',null,
                 secBox('Past logs — previous journal entries',
                   vals.journalVM.length ? E('div',{style:{maxHeight:180,overflowY:'auto'}}, vals.journalVM.map(j=>E('div',{key:j.id,style:{borderTop:'1px solid var(--color-divider)',padding:'6px 0'}},
@@ -2624,8 +2614,6 @@ class Component extends DCLogic {
                     E('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}},
                       E('div',{className:'field'}, E('label',null,'Main of the day'), E('textarea',{className:'input',defaultValue:jc.mainToday,onBlur:jc.setMainToday})),
                       E('div',{className:'field'}, E('label',null,'Quick of the day'), E('textarea',{className:'input',style:{minHeight:40},defaultValue:jc.quickToday,onBlur:jc.setQuickToday}))),
-                    E('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginTop:10}},
-                      classDomain('german','German',jc.german), classDomain('python','Python',jc.python)),
                     yr ? E('div',{style:{marginTop:10,paddingTop:10,borderTop:'1px solid var(--color-divider)'}},
                       E('div',{style:{display:'flex',alignItems:'center',gap:6}}, E('h6',{style:{margin:0}},'Yesterday’s review'), !yr.editable?E('button',{className:'cmd-x-btn',style:{fontSize:10},title:'Edit yesterday',onClick:yr.unlock},'✎'):null),
                       E('textarea',{className:'input',style:{marginTop:6,fontSize:12},placeholder:'Notes…',defaultValue:yr.notes,onBlur:yr.setNotes,disabled:!yr.editable}),
@@ -2653,6 +2641,18 @@ class Component extends DCLogic {
                 E('select',{className:'input',style:{width:'auto'},defaultValue:b.status,onChange:b.setStatus}, E('option',{value:'to-read'},'to read'),E('option',{value:'reading'},'reading'),E('option',{value:'done'},'done')),
                 E('button',{className:'cmd-x-btn',style:{marginLeft:'auto'},onClick:b.remove},'×'))),
               E('div',{style:{display:'flex',gap:6,marginTop:8}}, E('input',{className:'input',id:'bookTitleDraft',placeholder:'Title'}), E('input',{className:'input',id:'bookAuthorDraft',placeholder:'Author'}), E('button',{className:'btn btn-secondary',onClick:vals.addBook},'Add'))) };
+        }
+        case 'dayTagline': {
+          const tg = vals.dailyTagline;
+          return { condensed: (tg.hero||tg.verse||tg.word) ? E('div',{style:{fontSize:12}},
+              tg.hero?E('div',{style:{marginBottom:2}}, E('b',null,'Hero: '), tg.hero):null,
+              tg.verse?E('div',{style:{marginBottom:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, E('b',null,'Verse: '), tg.verse):null,
+              tg.word?E('div',null, E('b',null,'Word: '), tg.word):null)
+              : E('p',{className:'text-muted',style:{fontSize:12}},'Empty — tap to write.'),
+            full: E('div',{style:{display:'flex',flexDirection:'column',gap:10}},
+              E('div',{className:'field'}, E('label',null,'Hero to emulate'), E('input',{className:'input',defaultValue:tg.hero,onBlur:tg.setHero,placeholder:'Who are you trying to be like today?'})),
+              E('div',{className:'field'}, E('label',null,'Verse'), E('textarea',{className:'input',style:{minHeight:60},defaultValue:tg.verse,onBlur:tg.setVerse,placeholder:'Verse of the day…'})),
+              E('div',{className:'field'}, E('label',null,'Word of the day'), E('input',{className:'input',defaultValue:tg.word,onBlur:tg.setWord,placeholder:'One new word…'}))) };
         }
         case 'dayDrills': {
           const doneN = vals.dailyDrillsVM.filter(d=>d.done).length;
@@ -2683,12 +2683,12 @@ class Component extends DCLogic {
         case 'dReview': {
           const doneN = vals.dailyReviewVM.filter(p=>p.checked).length;
           return { condensed: E('div',null, E('div',{style:{fontSize:12,color:'var(--cmd-strong)',marginBottom:4}}, doneN+'/'+vals.dailyReviewVM.length+' reviewed'),
-              vals.dailyReviewVM.length ? shortList(vals.dailyReviewVM,4,p=>rowLine(p.id,p.source+': '+p.prompt,p.checked)) : E('p',{className:'text-muted',style:{fontSize:11}},'Nothing to review yet — add vocab/grammar in German or Python.')),
+              vals.dailyReviewVM.length ? shortList(vals.dailyReviewVM,4,p=>rowLine(p.id,p.source+': '+p.prompt,p.checked)) : E('p',{className:'text-muted',style:{fontSize:11}},'Nothing to review yet — jot some vocab or track a concept in Review.')),
             full: vals.dailyReviewVM.length ? E('div',null, vals.dailyReviewVM.map(p=>E('label',{key:p.id,style:{display:'flex',alignItems:'center',gap:8,padding:'5px 0',borderBottom:'1px solid var(--color-divider)',cursor:'pointer'}},
                 E('input',{type:'checkbox',className:'cmd-chk',checked:p.checked,onChange:p.toggle}),
                 E('span',{className:'tag tag-neutral',style:{fontSize:9,flex:'none'}},p.source),
                 E('span',{style:{textDecoration:p.checked?'line-through':'none',opacity:p.checked?.55:1,flex:1}}, p.prompt),
-                E('span',{className:'tag',style:{fontSize:9,flex:'none'}},p.domain)))) : E('p',{className:'text-muted',style:{fontSize:12}},'Nothing to review yet — add vocab/grammar in German or Python.') };
+                E('span',{className:'tag',style:{fontSize:9,flex:'none'}},p.domain)))) : E('p',{className:'text-muted',style:{fontSize:12}},'Nothing to review yet — jot some vocab or track a concept in Review.') };
         }
       }
       return null;

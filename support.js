@@ -634,9 +634,15 @@
         { key },
         list.map((item, i) => {
           const sub = { ...vals, [asName]: item, $index: i };
+          // Prefer the item's own stable `.key` (the convention app code already uses for
+          // list rows, e.g. tile.key) over the array index — an index key makes React reuse
+          // a deleted/reordered row's DOM node for whatever item now sits at that index,
+          // which is fatal for uncontrolled inputs (e.g. a sticky note's text silently
+          // jumping onto the wrong note when an earlier one is removed).
+          const rowKey = (item && typeof item === "object" && item.key != null) ? item.key : i;
           return h(
             getReact().Fragment,
-            { key: i },
+            { key: rowKey },
             kids.map((b, j) => b(sub, ctx, j))
           );
         })
